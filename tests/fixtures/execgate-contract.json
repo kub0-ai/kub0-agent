@@ -1,0 +1,131 @@
+{
+  "events": {
+    "fleet": {
+      "connected": false,
+      "denylist": [],
+      "denylistLive": true,
+      "denylistVersion": 0,
+      "endpoints": [],
+      "endpointsRefreshOk": null,
+      "endpointsUpdatedAt": 0,
+      "execGate": {
+        "armed": true,
+        "counters": {
+          "allowedOnce": 2,
+          "allowlisted": 7,
+          "blocked": 1,
+          "cacheHit": 6,
+          "deadline": 10,
+          "error": 9,
+          "failopen": 4,
+          "hashed": 5,
+          "marks": 12,
+          "overCap": 8,
+          "overflow": 11,
+          "trusted": 3,
+          "uncovered": 13
+        },
+        "denies": [
+          {
+            "comm": "fixture-sample",
+            "createdAt": "2026-10-20T01:02:03Z",
+            "decision": "allowed_failopen",
+            "exe": "/home/fixture/Downloads/fixture-sample",
+            "pid": 4242,
+            "ppid": 4241,
+            "promotedBy": "fixture-auto",
+            "reason": "fixture reason",
+            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "ts": 1700000000500
+          }
+        ],
+        "enabled": true,
+        "keys": 3,
+        "listReceivedAt": 1700000000300,
+        "listRestored": true,
+        "observedAt": 1700000000789,
+        "oncePending": 1,
+        "source": "live",
+        "trusted": [
+          {
+            "addedAt": 1700000000100,
+            "comm": "fixture-trusted",
+            "exe": "/opt/fixture/fixture-trusted",
+            "note": "fixture note",
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        ]
+      },
+      "lastHeartbeatOk": null,
+      "lastHeartbeatTs": 0,
+      "netpolicies": [],
+      "netpolicyEnforcement": {
+        "appliedTs": 0,
+        "enforcing": false,
+        "entries": 0,
+        "rules": [],
+        "sharedRanges": 0,
+        "skipped": {},
+        "state": ""
+      },
+      "netpolicyRefreshOk": null,
+      "nodeLimit": 0,
+      "orgEndpoints": 0,
+      "prevalence": [],
+      "prevalenceSupported": null,
+      "selfState": "unknown",
+      "sharingDestinations": false,
+      "ts": 1700000000456,
+      "type": "fleet"
+    }
+  },
+  "execGate": {
+    "armed": true,
+    "counters": {
+      "allowedOnce": 2,
+      "allowlisted": 7,
+      "blocked": 1,
+      "cacheHit": 6,
+      "deadline": 10,
+      "error": 9,
+      "failopen": 4,
+      "hashed": 5,
+      "marks": 12,
+      "overCap": 8,
+      "overflow": 11,
+      "trusted": 3,
+      "uncovered": 13
+    },
+    "denies": [
+      {
+        "comm": "fixture-sample",
+        "createdAt": "2026-10-20T01:02:03Z",
+        "decision": "allowed_failopen",
+        "exe": "/home/fixture/Downloads/fixture-sample",
+        "pid": 4242,
+        "ppid": 4241,
+        "promotedBy": "fixture-auto",
+        "reason": "fixture reason",
+        "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "ts": 1700000000500
+      }
+    ],
+    "enabled": true,
+    "keys": 3,
+    "listReceivedAt": 1700000000300,
+    "listRestored": true,
+    "observedAt": 1700000000789,
+    "oncePending": 1,
+    "source": "live",
+    "trusted": [
+      {
+        "addedAt": 1700000000100,
+        "comm": "fixture-trusted",
+        "exe": "/opt/fixture/fixture-trusted",
+        "note": "fixture note",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "generatedBy": "daemon/tests/wire_contract.rs; regenerate with: KUB0_BLESS=1 cargo test -p vallumd --test wire_contract"
+}

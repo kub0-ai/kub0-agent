@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconcile expired kub0 destination rules
+# Either is enough ("|"). One release: /var/lib/vallum/scoped too, for a host
+# where kub0d could not move /var/lib/vallum and the helper still keeps its
+# records there (it reads whichever directory is in use).
+ConditionPathIsDirectory=|/var/lib/kub0/scoped
+ConditionPathIsDirectory=|/var/lib/vallum/scoped
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/kub0/kub0-block expire-scoped

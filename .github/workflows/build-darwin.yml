@@ -1,0 +1,32 @@
+name: build-darwin
+# macOS runners bill at ten times the Linux rate on a private repository, so
+# these two jobs run on main, on release tags and by hand, not on every pull
+# request. A pull request that touches the darwin side can ask for one with
+#   gh workflow run build-darwin.yml --ref <branch>
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26-intel, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - run: cargo build --locked -p vallumd
+      - run: cargo test --locked -p vallumd --lib
+      - run: cargo test --locked -p vallumd --bin kub0d source_defaults_and_explicit_overrides
+      - name: Independent Apple SDK ABI and private live libproc gate
+        run: python3 tests/darwin-native-gate.py

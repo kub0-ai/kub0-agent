@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "fixture forbids privileged actions" >&2
+exit 99

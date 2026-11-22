@@ -1,8 +1,10 @@
 /target
 **/*.rs.bk
 .DS_Store
-/bin/snitchd
-/bin/snitch-block
+/bin/kub0d
+/bin/kub0-block
+/bin/kub0
+/bin/kub0-capture
 /bin/SHA256SUMS
 *.log
 .grok_impl.log
@@ -13,3 +15,4 @@
 .serena/
 __pycache__/
 *.pyc
+/dist/

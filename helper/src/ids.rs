@@ -9,7 +9,7 @@ impl std::fmt::Display for ForbiddenApp {
 
 /// Aggregated other-uid / unresolved rows must never be migrated or IP-blocked.
 pub fn is_forbidden_app(id: &str) -> bool {
-    matches!(id, "system" | "unknown" | "" | "." | "..")
+    matches!(id, "system" | "unknown" | "" | "." | "..") || id.starts_with("__vallum_scoped_")
 }
 
 pub fn sanitize_app(id: &str) -> Result<String, String> {

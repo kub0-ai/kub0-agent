@@ -21,6 +21,20 @@ pub fn cgroup_drop_in_text(text: &str, path: &str, level: u32) -> bool {
 }
 
 fn line_is_cgroup_drop(line: &str, path: &str, level: u32) -> bool {
+    let mut words = line.split_whitespace();
+    while let Some(word) = words.next() {
+        if word == "comment" && words.next().is_some_and(|s| s.trim_matches('"') == "vallum-scoped") { return false; }
+    }
+    cgroup_drop_any_in_text(line, path, level)
+}
+
+/// Cleanup matches both scoped and whole-app drops. Classification deliberately
+/// excludes scoped comments, but deletion must remove them before their sets.
+pub fn cgroup_drop_any_in_text(text: &str, path: &str, level: u32) -> bool {
+    text.lines().any(|line| line_is_any_cgroup_drop(line, path, level))
+}
+
+fn line_is_any_cgroup_drop(line: &str, path: &str, level: u32) -> bool {
     if !line_has_path(line, path) {
         return false;
     }
@@ -57,6 +71,9 @@ fn find_matching_rule(v: &Value, path: &str, level: u32) -> bool {
 }
 
 fn rule_is_cgroup_drop(rule: &Value, path: &str, level: u32) -> bool {
+    if rule.get("comment").and_then(Value::as_str) == Some("vallum-scoped") {
+        return false;
+    }
     let exprs = match rule.get("expr").and_then(|e| e.as_array()) {
         Some(a) => a,
         None => return false,
@@ -122,9 +139,10 @@ fn socket_obj_matches(sock: &Value, level: u32) -> bool {
     };
     let is_cgroup = obj.get("key").and_then(|k| k.as_str()) == Some("cgroupv2")
         || obj.contains_key("cgroupv2")
-        || obj
-            .values()
-            .any(|v| v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("cgroupv2")));
+        || obj.values().any(|v| {
+            v.as_str()
+                .is_some_and(|s| s.eq_ignore_ascii_case("cgroupv2"))
+        });
     if !is_cgroup {
         return false;
     }
@@ -140,15 +158,59 @@ fn socket_obj_matches(sock: &Value, level: u32) -> bool {
     lvl == Some(u64::from(level))
 }
 
+/// The elements of one set, from `nft list set` text output.
+///
+/// Membership used to be a substring test on that text, so `1.2.3.4` was
+/// "present" whenever `11.2.3.44` was, and an unblock could report failure for
+/// an address it had in fact removed. This returns whole elements to compare
+/// exactly. nft wraps long sets across lines and may annotate an element
+/// (`1.2.3.4 timeout 1h`); only the address token is kept.
+pub fn set_elements_in_text(text: &str) -> Vec<String> {
+    let Some(start) = text.find("elements = {") else {
+        return Vec::new();
+    };
+    let body = &text[start + "elements = {".len()..];
+    let body = &body[..body.find('}').unwrap_or(body.len())];
+    body.split(',')
+        .filter_map(|e| e.split_whitespace().next())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Every app with a live cgroup drop rule in a table listing, by the id the
+/// helper stored it under (the part after `vallum.slice/vallum-`).
+///
+/// The panel keeps its idea of what is blocked in memory, so after a shell
+/// restart it believed nothing was, while these rules went on enforcing.
+/// `status` reports this list so the panel can put the blocks back.
+pub fn cgroup_blocked_apps(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        for tok in line.split_whitespace() {
+            let path = tok.trim_matches('"');
+            let Some(app) = path.strip_prefix("vallum.slice/vallum-") else {
+                continue;
+            };
+            if app.is_empty() || app.contains('/') {
+                continue;
+            }
+            if line_is_cgroup_drop(line, path, 2) && !out.iter().any(|a| a == app) {
+                out.push(app.to_string());
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const PATH: &str = "snitch.slice/snitch-firefox";
+    const PATH: &str = "vallum.slice/vallum-firefox";
 
     fn json_key_field() -> String {
         format!(
-            r#"{{"nftables":[{{"rule":{{"family":"inet","table":"snitch","chain":"out","expr":[
+            r#"{{"nftables":[{{"rule":{{"family":"inet","table":"vallum","chain":"out","expr":[
                 {{"match":{{"op":"==","left":{{"socket":{{"key":"cgroupv2","field":2}}}},"right":"{PATH}"}}}},
                 {{"drop":null}}
             ]}}}}]}}"#
@@ -167,6 +229,17 @@ mod tests {
     #[test]
     fn json_key_field_drop_matches() {
         assert!(cgroup_drop_in_json(&json_key_field(), PATH, 2));
+    }
+
+    #[test]
+    fn scoped_drops_do_not_claim_the_entire_app_is_blocked() {
+        let scoped=json_key_field().replace("\"expr\":", "\"comment\":\"vallum-scoped\",\"expr\":");
+        assert!(!cgroup_drop_in_json(&scoped,PATH,2));
+        assert!(!cgroup_drop_in_text(&format!("socket cgroupv2 level 2 \"{PATH}\" ip daddr @t4 drop comment \"vallum-scoped\""),PATH,2));
+        assert!(cgroup_blocked_apps(&format!("socket cgroupv2 level 2 \"{PATH}\" ip daddr @t4 drop comment \"vallum-scoped\"" )).is_empty());
+        assert!(cgroup_drop_any_in_text(&format!("socket cgroupv2 level 2 \"{PATH}\" ip daddr @t4 drop comment \"vallum-scoped\""), PATH, 2));
+        let named = "vallum.slice/vallum-org.vallum-scoped";
+        assert!(cgroup_drop_in_text(&format!("socket cgroupv2 level 2 \"{named}\" drop"), named, 2));
     }
 
     #[test]
@@ -191,13 +264,13 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn text_prefix_path_is_not_a_match() {
-        let line = r#"socket cgroupv2 level 2 "snitch.slice/snitch-firefox2" drop # handle 12"#;
-        assert!(!cgroup_drop_in_text(line, "snitch.slice/snitch-firefox", 2));
-        assert!(cgroup_drop_in_text(line, "snitch.slice/snitch-firefox2", 2));
+        let line = r#"socket cgroupv2 level 2 "vallum.slice/vallum-firefox2" drop # handle 12"#;
+        assert!(!cgroup_drop_in_text(line, "vallum.slice/vallum-firefox", 2));
+        assert!(cgroup_drop_in_text(line, "vallum.slice/vallum-firefox2", 2));
     }
 
+    #[test]
     fn json_path_on_one_rule_drop_on_another_rejected() {
         let js = format!(
             r#"{{"nftables":[
@@ -218,7 +291,7 @@ mod tests {
     fn json_prefix_path_does_not_match() {
         assert!(!cgroup_drop_in_json(
             &json_key_field(),
-            "snitch.slice/snitch-fire",
+            "vallum.slice/vallum-fire",
             2
         ));
     }
@@ -226,20 +299,47 @@ mod tests {
     #[test]
     fn text_quoted_rule_matches() {
         let text = r#"
-table inet snitch {
+table inet vallum {
 	chain out {
-		socket cgroupv2 level 2 "snitch.slice/snitch-firefox" drop
+		socket cgroupv2 level 2 "vallum.slice/vallum-firefox" drop
 	}
 }
 "#;
         assert!(cgroup_drop_in_text(text, PATH, 2));
         assert!(!cgroup_drop_in_text(text, PATH, 3));
-        assert!(!cgroup_drop_in_text(text, "snitch.slice/snitch-fire", 2));
+        assert!(!cgroup_drop_in_text(text, "vallum.slice/vallum-fire", 2));
     }
 
     #[test]
     fn text_accept_rejected() {
-        let text = r#"        socket cgroupv2 level 2 "snitch.slice/snitch-firefox" accept"#;
+        let text = r#"        socket cgroupv2 level 2 "vallum.slice/vallum-firefox" accept"#;
         assert!(!cgroup_drop_in_text(text, PATH, 2));
+    }
+
+    #[test]
+    fn set_elements_are_whole_addresses_not_substrings() {
+        let text = "table inet vallum {\n\tset blocked4 {\n\t\ttype ipv4_addr\n\t\telements = { 11.2.3.44, 93.184.216.34,\n\t\t\t     10.0.0.1 timeout 1h }\n\t}\n}\n";
+        let els = set_elements_in_text(text);
+        assert_eq!(els, ["11.2.3.44", "93.184.216.34", "10.0.0.1"]);
+        assert!(!els.iter().any(|e| e == "1.2.3.4"));
+        assert!(set_elements_in_text("table inet vallum {\n\tset blocked4 {\n\t}\n}").is_empty());
+        let v6 = "\t\telements = { 2001:db8::1, ::ffff:1.2.3.4 }";
+        assert_eq!(set_elements_in_text(v6), ["2001:db8::1", "::ffff:1.2.3.4"]);
+    }
+
+    #[test]
+    fn blocked_apps_are_read_from_live_drop_rules_only() {
+        let text = r#"table inet vallum {
+	chain out {
+		type filter hook output priority filter; policy accept;
+		socket cgroupv2 level 2 "vallum.slice/vallum-com.discordapp.discord" drop # handle 7
+		socket cgroupv2 level 2 "vallum.slice/vallum-firefox" drop # handle 9
+		socket cgroupv2 level 2 "vallum.slice/vallum-firefox" drop # handle 12
+		socket cgroupv2 level 2 "vallum.slice/vallum-counted" counter packets 0 bytes 0 accept # handle 13
+		ip daddr @blocked4 drop # handle 4
+	}
+}"#;
+        assert_eq!(cgroup_blocked_apps(text), ["com.discordapp.discord", "firefox"]);
+        assert!(cgroup_blocked_apps("").is_empty());
     }
 }

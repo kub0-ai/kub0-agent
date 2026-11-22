@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot setup from the Snitch panel: packages, build, privileged helper.
+# One-shot setup from the kub0 panel: packages, build, privileged helper.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,7 +22,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x ./bin/snitchd || ! -x ./bin/snitch-block ]]; then
+if [[ ! -x ./bin/kub0d || ! -x ./bin/kub0-block || ! -x ./bin/kub0 ]]; then
   ./build.sh
   # Writing bin/ reloads the plugin and restarts the polkit agent. Wait so
   # the following sudo/pkexec prompt is not dismissed.
@@ -31,4 +31,4 @@ if [[ ! -x ./bin/snitchd || ! -x ./bin/snitch-block ]]; then
 fi
 
 ./scripts/install-privileged.sh
-echo "Snitch setup finished."
+echo "kub0 setup finished."

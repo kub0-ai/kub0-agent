@@ -32,13 +32,26 @@ pub fn same_app(seed: &ProcIdentity, other: &ProcIdentity) -> bool {
     if seed.uid != other.uid {
         return false;
     }
-    if !seed.exe_base.is_empty() && seed.exe_base == other.exe_base {
-        return true;
+    // exe only. `comm` is whatever the process last wrote to it
+    // (prctl(PR_SET_NAME)), so matching on it let a process that joined the
+    // row pull any same-uid ancestor or descendant with that name into the
+    // block, e.g. its own parent.
+    !seed.exe_base.is_empty() && seed.exe_base == other.exe_base
+}
+
+/// The file name of a `/proc/<pid>/exe` link target. A binary replaced by a
+/// package update reads as `firefox (deleted)` in every process started
+/// before the update; without the suffix those still match the ones started
+/// after it.
+pub fn exe_basename(target: &std::path::Path) -> String {
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match name.strip_suffix(" (deleted)") {
+        Some(base) => base.to_string(),
+        None => name,
     }
-    if !seed.comm.is_empty() && seed.comm == other.comm {
-        return true;
-    }
-    false
 }
 
 /// Expand seed PIDs (typically those owning sockets) into the validated app
@@ -192,6 +205,33 @@ mod tests {
         assert!(forest.contains(&40));
         assert!(forest.contains(&41));
         assert!(!forest.contains(&50));
+    }
+
+    #[test]
+    fn a_shared_comm_alone_does_not_join_the_forest() {
+        // 61 joined the row and renamed itself to its parent's comm; 62 is an
+        // unrelated child of that parent with the same comm.
+        let session = "/user.slice/user-1000.slice/user@1000.service/session.slice";
+        let procs = map(vec![
+            proc(60, 1, "systemd", "systemd", session),
+            proc(61, 60, "firefox", "systemd", session),
+            proc(62, 60, "systemd", "systemd", session),
+        ]);
+        assert_eq!(collect_forest(&[61], &procs), vec![61]);
+    }
+
+    #[test]
+    fn a_binary_replaced_by_an_update_still_matches() {
+        use std::path::Path;
+        assert_eq!(exe_basename(Path::new("/usr/lib/firefox/firefox (deleted)")), "firefox");
+        assert_eq!(exe_basename(Path::new("/usr/lib/firefox/firefox")), "firefox");
+        assert_eq!(exe_basename(Path::new("/")), "");
+        let session = "/user.slice/user-1000.slice/user@1000.service/session.slice";
+        let procs = map(vec![
+            proc(70, 1, &exe_basename(Path::new("/usr/lib/firefox/firefox (deleted)")), "firefox", session),
+            proc(71, 70, &exe_basename(Path::new("/usr/lib/firefox/firefox")), "firefox", session),
+        ]);
+        assert_eq!(collect_forest(&[70], &procs), vec![70, 71]);
     }
 
     #[test]

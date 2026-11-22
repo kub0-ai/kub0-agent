@@ -8,6 +8,8 @@ Item {
   property string pluginDir: ""
   property string worldDataPath: pluginDir ? pluginDir + "/data/world-paths.json" : ""
   property var arcs: []
+  // False while nobody can see the map; stops the arc animation timer.
+  property bool animating: true
   property var origin: ({ lat: 48.0, lon: 10.0 })
   property color landColor: "#2a3340"
   property color borderColor: "#4a5564"
@@ -148,7 +150,9 @@ Item {
 
   Timer {
     interval: 40
-    running: root.visible && root.arcs && root.arcs.length > 0
+    // `visible` alone does not follow the panel's popup being hidden, so the
+    // host says when anyone can see this.
+    running: root.animating && root.visible && root.arcs && root.arcs.length > 0
     repeat: true
     onTriggered: {
       root.phase = (root.phase + 2) % 100
@@ -183,15 +187,5 @@ Item {
         return c
     }
     return null
-  }
-
-  Text {
-    anchors.left: parent.left
-    anchors.bottom: parent.bottom
-    anchors.margins: 8
-    visible: extraHidden > 0
-    text: "+" + extraHidden + " more"
-    color: root.dimColor
-    font.pixelSize: 11
   }
 }

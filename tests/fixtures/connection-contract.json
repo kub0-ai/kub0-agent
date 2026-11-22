@@ -1,0 +1,313 @@
+{
+  "connection": {
+    "app": {
+      "desktop": "fixture-app.desktop",
+      "exe": "/usr/bin/fixture-app",
+      "icon": "fixture-icon",
+      "id": "fixture-app",
+      "name": "Fixture App",
+      "owner": {
+        "name": "fixture-user",
+        "uid": 1000
+      },
+      "pid": 31337,
+      "system": true
+    },
+    "asn": 64496,
+    "bytes": {
+      "rx": 2048,
+      "tx": 1024
+    },
+    "clue": {
+      "basis": "PTR edge-7.fixture.example",
+      "confidence": "strong",
+      "kind": "relay",
+      "label": "Fixture relay"
+    },
+    "country": "DE",
+    "evidence": {
+      "container": "fixture-container",
+      "hash": "sha256:fixture",
+      "lineage": {
+        "ancestors": [
+          {
+            "comm": "fixture-shell",
+            "exe": "/usr/bin/fixture-shell",
+            "pid": 31336
+          }
+        ],
+        "cmdline": "fixture-app --fixture",
+        "cwd": "/home/fixture",
+        "truncated": true
+      },
+      "ownerMethod": "fixture owner method",
+      "package": "fixture-app 1.0-1",
+      "recordedAt": 1700000000123,
+      "source": "procfs",
+      "verdict": {
+        "action": "deny",
+        "provenance": "fleetPolicy",
+        "rule_id": "fixture-rule"
+      }
+    },
+    "exe": "/usr/bin/fixture-app",
+    "hostname": "edge-7.fixture.example",
+    "hostnameSource": "dns",
+    "id": "tcp:4242:203.0.113.7:443",
+    "indicators": [
+      {
+        "attack": {
+          "id": "T0000",
+          "name": "Fixture Technique"
+        },
+        "basis": "fixture basis",
+        "id": "fixture-indicator",
+        "severity": "notice"
+      }
+    ],
+    "inode": 4242,
+    "lat": 50.1109,
+    "local": {
+      "ip": "192.0.2.10",
+      "port": 40001
+    },
+    "lon": 8.6821,
+    "networkKey": "203.0.113.0/24",
+    "newNetwork": true,
+    "org": "Fixture Networks LLC",
+    "policy": [
+      {
+        "label": "Fixture policy",
+        "ruleId": "fixture-policy-rule"
+      }
+    ],
+    "proto": "tcp",
+    "reason": "unreadable",
+    "remote": {
+      "ip": "203.0.113.7",
+      "port": 443
+    },
+    "state": "ESTABLISHED",
+    "tag": {
+      "kind": "service",
+      "label": "Fixture network",
+      "network_key": "203.0.113.0/24",
+      "ptr_suffix": "fixture.example",
+      "source": "user",
+      "ts": 1700000000000
+    },
+    "uid": 1000,
+    "unresolved": true
+  },
+  "events": {
+    "connect": {
+      "app": {
+        "desktop": "fixture-app.desktop",
+        "exe": "/usr/bin/fixture-app",
+        "icon": "fixture-icon",
+        "id": "fixture-app",
+        "name": "Fixture App",
+        "owner": {
+          "name": "fixture-user",
+          "uid": 1000
+        },
+        "pid": 31337,
+        "system": true
+      },
+      "asn": 64496,
+      "bytes": {
+        "rx": 2048,
+        "tx": 1024
+      },
+      "clue": {
+        "basis": "PTR edge-7.fixture.example",
+        "confidence": "strong",
+        "kind": "relay",
+        "label": "Fixture relay"
+      },
+      "country": "DE",
+      "evidence": {
+        "container": "fixture-container",
+        "hash": "sha256:fixture",
+        "lineage": {
+          "ancestors": [
+            {
+              "comm": "fixture-shell",
+              "exe": "/usr/bin/fixture-shell",
+              "pid": 31336
+            }
+          ],
+          "cmdline": "fixture-app --fixture",
+          "cwd": "/home/fixture",
+          "truncated": true
+        },
+        "ownerMethod": "fixture owner method",
+        "package": "fixture-app 1.0-1",
+        "recordedAt": 1700000000123,
+        "source": "procfs",
+        "verdict": {
+          "action": "deny",
+          "provenance": "fleetPolicy",
+          "rule_id": "fixture-rule"
+        }
+      },
+      "exe": "/usr/bin/fixture-app",
+      "hostname": "edge-7.fixture.example",
+      "hostnameSource": "dns",
+      "id": "tcp:4242:203.0.113.7:443",
+      "indicators": [
+        {
+          "attack": {
+            "id": "T0000",
+            "name": "Fixture Technique"
+          },
+          "basis": "fixture basis",
+          "id": "fixture-indicator",
+          "severity": "notice"
+        }
+      ],
+      "inode": 4242,
+      "lat": 50.1109,
+      "local": {
+        "ip": "192.0.2.10",
+        "port": 40001
+      },
+      "lon": 8.6821,
+      "networkKey": "203.0.113.0/24",
+      "newNetwork": true,
+      "org": "Fixture Networks LLC",
+      "policy": [
+        {
+          "label": "Fixture policy",
+          "ruleId": "fixture-policy-rule"
+        }
+      ],
+      "proto": "tcp",
+      "reason": "unreadable",
+      "remote": {
+        "ip": "203.0.113.7",
+        "port": 443
+      },
+      "state": "ESTABLISHED",
+      "tag": {
+        "kind": "service",
+        "label": "Fixture network",
+        "network_key": "203.0.113.0/24",
+        "ptr_suffix": "fixture.example",
+        "source": "user",
+        "ts": 1700000000000
+      },
+      "ts": 1700000000456,
+      "type": "connect",
+      "uid": 1000,
+      "unresolved": true
+    },
+    "snapshot": {
+      "connections": [
+        {
+          "app": {
+            "desktop": "fixture-app.desktop",
+            "exe": "/usr/bin/fixture-app",
+            "icon": "fixture-icon",
+            "id": "fixture-app",
+            "name": "Fixture App",
+            "owner": {
+              "name": "fixture-user",
+              "uid": 1000
+            },
+            "pid": 31337,
+            "system": true
+          },
+          "asn": 64496,
+          "bytes": {
+            "rx": 2048,
+            "tx": 1024
+          },
+          "clue": {
+            "basis": "PTR edge-7.fixture.example",
+            "confidence": "strong",
+            "kind": "relay",
+            "label": "Fixture relay"
+          },
+          "country": "DE",
+          "evidence": {
+            "container": "fixture-container",
+            "hash": "sha256:fixture",
+            "lineage": {
+              "ancestors": [
+                {
+                  "comm": "fixture-shell",
+                  "exe": "/usr/bin/fixture-shell",
+                  "pid": 31336
+                }
+              ],
+              "cmdline": "fixture-app --fixture",
+              "cwd": "/home/fixture",
+              "truncated": true
+            },
+            "ownerMethod": "fixture owner method",
+            "package": "fixture-app 1.0-1",
+            "recordedAt": 1700000000123,
+            "source": "procfs",
+            "verdict": {
+              "action": "deny",
+              "provenance": "fleetPolicy",
+              "rule_id": "fixture-rule"
+            }
+          },
+          "exe": "/usr/bin/fixture-app",
+          "hostname": "edge-7.fixture.example",
+          "hostnameSource": "dns",
+          "id": "tcp:4242:203.0.113.7:443",
+          "indicators": [
+            {
+              "attack": {
+                "id": "T0000",
+                "name": "Fixture Technique"
+              },
+              "basis": "fixture basis",
+              "id": "fixture-indicator",
+              "severity": "notice"
+            }
+          ],
+          "inode": 4242,
+          "lat": 50.1109,
+          "local": {
+            "ip": "192.0.2.10",
+            "port": 40001
+          },
+          "lon": 8.6821,
+          "networkKey": "203.0.113.0/24",
+          "newNetwork": true,
+          "org": "Fixture Networks LLC",
+          "policy": [
+            {
+              "label": "Fixture policy",
+              "ruleId": "fixture-policy-rule"
+            }
+          ],
+          "proto": "tcp",
+          "reason": "unreadable",
+          "remote": {
+            "ip": "203.0.113.7",
+            "port": 443
+          },
+          "state": "ESTABLISHED",
+          "tag": {
+            "kind": "service",
+            "label": "Fixture network",
+            "network_key": "203.0.113.0/24",
+            "ptr_suffix": "fixture.example",
+            "source": "user",
+            "ts": 1700000000000
+          },
+          "uid": 1000,
+          "unresolved": true
+        }
+      ],
+      "ts": 1700000000456,
+      "type": "snapshot"
+    }
+  },
+  "generatedBy": "daemon/tests/wire_contract.rs; regenerate with: KUB0_BLESS=1 cargo test -p vallumd --test wire_contract"
+}

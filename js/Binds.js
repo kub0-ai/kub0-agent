@@ -3,7 +3,12 @@
 // Detect live Hyprland binds and plan a bindings.lua snippet.
 // Never auto-applied — installBinds runs only after an explicit click.
 
-var PLUGIN_ID = "io.github.chris.snitch"
+var PLUGIN_ID = "ai.kub0.agent"
+// The plugin's id through 0.4.6. A bind that still names it was written by
+// this panel and now toggles nothing. It is ours (never someone else's key
+// to step around) and it is stale: the offer comes back, and the write puts
+// the new command on the same keys.
+var OLD_PLUGIN_ID = "ai.kub0.vallum"
 var SUPER = 64
 var SHIFT = 1
 var CTRL = 4
@@ -14,8 +19,8 @@ var CANDIDATES = [
         keys: "SUPER + ALT + S",
         modmask: SUPER + ALT,
         key: "S",
-        desc: "Snitch",
-        cmd: "omarchy-shell shell toggle io.github.chris.snitch '{}'",
+        desc: "kub0",
+        cmd: "omarchy-shell shell toggle ai.kub0.agent '{}'",
         alternates: [
             { keys: "SUPER + SHIFT + ALT + S", modmask: SUPER + SHIFT + ALT, key: "S" }
         ]
@@ -61,12 +66,20 @@ function keysMatch(a, b) {
     return isPeriod(x) && isPeriod(y)
 }
 
+// A bind this panel wrote under its old id: it opens nothing any more.
+function isStale(bind) {
+    if (!bind)
+        return false
+    var arg = String(bind.arg || "")
+    return arg.indexOf(OLD_PLUGIN_ID) >= 0 && arg.indexOf(PLUGIN_ID) < 0
+}
+
 function isOurs(bind) {
     if (!bind)
         return false
     var arg = String(bind.arg || "")
     var desc = String(bind.description || "")
-    if (arg.indexOf(PLUGIN_ID) >= 0)
+    if (arg.indexOf(PLUGIN_ID) >= 0 || arg.indexOf(OLD_PLUGIN_ID) >= 0)
         return true
     for (var i = 0; i < CANDIDATES.length; i++) {
         if (desc === CANDIDATES[i].desc)
@@ -79,7 +92,8 @@ function oursCount(binds) {
     var n = 0
     var list = binds || []
     for (var i = 0; i < list.length; i++) {
-        if (isOurs(list[i]))
+        // Only a bind that opens the panel counts as one we have.
+        if (isOurs(list[i]) && !isStale(list[i]))
             n++
     }
     return n
@@ -95,7 +109,7 @@ function comboOwner(binds, modmask, key) {
         if (!keysMatch(keyOf(b), want))
             continue
         if (isOurs(b))
-            return { ours: true, desc: String(b.description || "") }
+            return { ours: true, stale: isStale(b), desc: String(b.description || "") }
         return { ours: false, desc: String(b.description || b.dispatcher || "already bound") }
     }
     return null
@@ -103,14 +117,16 @@ function comboOwner(binds, modmask, key) {
 
 function pickCombo(binds, candidate) {
     var owner = comboOwner(binds, candidate.modmask, candidate.key)
-    if (!owner)
+    // Free, or held by our own stale bind: the write replaces that one.
+    if (!owner || (owner.ours && owner.stale))
         return { keys: candidate.keys, modmask: candidate.modmask, key: candidate.key, desc: candidate.desc, cmd: candidate.cmd, chosen: candidate.keys }
     if (owner.ours)
         return { already: true, keys: candidate.keys, desc: candidate.desc }
     var alts = candidate.alternates || []
     for (var i = 0; i < alts.length; i++) {
         var a = alts[i]
-        if (!comboOwner(binds, a.modmask, a.key))
+        var held = comboOwner(binds, a.modmask, a.key)
+        if (!held || (held.ours && held.stale))
             return {
                 keys: a.keys,
                 modmask: a.modmask,
@@ -193,5 +209,41 @@ function notifyBody(items, skipped) {
 }
 
 function notifyArgv(appName, headline, body) {
-    return ["omarchy", "notification", "send", "--app-name", String(appName || PLUGIN_ID), "-g", "󰌌", String(headline || "Keybindings"), String(body || "")]
+    return notifyArgvWithIcon(appName, "󰌌", headline || "Keybindings", body)
+}
+
+// The general form: `omarchy notification send` with a Nerd Font glyph for
+// the icon. The keybinding offer uses the keyboard; intel uses a shield, so a
+// watch-rule hit never looks like a prompt to install a hotkey.
+function notifyArgvWithIcon(appName, icon, headline, body) {
+    return ["omarchy", "notification", "send", "--app-name", String(appName || PLUGIN_ID), "-g", String(icon || "󰒃"), String(headline || "kub0"), String(body || "")]
+}
+
+// A notification with buttons. `omarchy notification send` takes each button
+// as `--action <label> <program> [words...]`; those words must be the caller's
+// own literals. Anything data-shaped (a digest) goes after `--with`, which the
+// shell appends to every action's argv, so it can never be read as a flag.
+// `urgency` is low|normal|critical.
+function notifyArgvWithActions(appName, icon, headline, body, urgency, actions, withArgs) {
+    var argv = ["omarchy", "notification", "send", "--app-name", String(appName || PLUGIN_ID), "-g", String(icon || "󰒃")]
+    if (urgency === "low" || urgency === "normal" || urgency === "critical")
+        argv.push("-u", urgency)
+    argv.push(String(headline || "kub0"), String(body || ""))
+    var list = actions && Object.prototype.toString.call(actions) === "[object Array]" ? actions : []
+    var i, j
+    for (i = 0; i < list.length; i++) {
+        var a = list[i]
+        if (!a || !a.label || !a.argv || !a.argv.length)
+            continue
+        argv.push("--action", String(a.label))
+        for (j = 0; j < a.argv.length; j++)
+            argv.push(String(a.argv[j]))
+    }
+    var extra = withArgs && Object.prototype.toString.call(withArgs) === "[object Array]" ? withArgs : []
+    if (list.length > 0 && extra.length > 0) {
+        argv.push("--with")
+        for (i = 0; i < extra.length; i++)
+            argv.push(String(extra[i]))
+    }
+    return argv
 }

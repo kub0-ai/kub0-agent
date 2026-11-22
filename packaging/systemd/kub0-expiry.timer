@@ -1,0 +1,11 @@
+[Unit]
+Description=Clean up expired kub0 destination rules
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=kub0-expiry.service
+
+[Install]
+WantedBy=timers.target

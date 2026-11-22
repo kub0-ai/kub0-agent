@@ -2,21 +2,29 @@
 
 Conservative choices where the Omarchy/Quickshell contract was not 100% certain.
 
+> **Inherited from upstream** (omarchy-snitch, MIT, Christopher Dwyer) and still
+> accurate in outline. Identity strings were updated by the renames (snitch to
+> vallum, then to kub0), and a few sections were revised where the design
+> changed (no automatic replay, one polkit action per helper verb). The rest
+> has not been re-verified against a running shell in this repo. Everything below describes where the shell's behaviour was
+> *inferred* rather than documented, which makes it the first place to look when
+> the plugin misbehaves after a shell update.
+
 ## Service lookup from the bar widget
 
-`shell.qml` exposes `serviceFor(pluginId)` (and `firstPartyServiceFor` as an alias). Media uses `bar.shell.firstPartyServiceFor("omarchy.media")`. Snitch uses `bar.shell.serviceFor("io.github.chris.snitch")` via `SnitchAdapter.findService`, and polls until the service instance exists because `_services` is populated asynchronously after widget construction.
+`shell.qml` exposes `serviceFor(pluginId)` (and `firstPartyServiceFor` as an alias). Media uses `bar.shell.firstPartyServiceFor("omarchy.media")`. The kub0 panel uses `bar.shell.serviceFor("ai.kub0.agent")` via `Kub0Adapter.findService`, and polls until the service instance exists because `_services` is populated asynchronously after widget construction.
 
-The summoned `panel` instance also receives `service` from the shell loader (`if ("service" in item) item.service = shell.serviceFor(...)`). `Panel.qml` treats `snitch || service` as the same singleton.
+The summoned `panel` instance also receives `service` from the shell loader (`if ("service" in item) item.service = shell.serviceFor(...)`). `Panel.qml` treats `vallum || service` as the same singleton.
 
 If that injection shape changes, the adapter is the only call site for the bar; the panel uses the documented `service` property.
 
 ## Plugin source directory
 
-Third-party manifests are stamped with `__sourceDir` in `PluginRegistry`. `snitchd`, GeoJSON, flags, and the MMDB are resolved from that path. If `__sourceDir` is absent, the daemon is treated as missing and the QML replay fallback runs.
+Third-party manifests are stamped with `__sourceDir` in `PluginRegistry`. `kub0d`, GeoJSON, flags, and the MMDB are resolved from that path. If `__sourceDir` is absent, the daemon is treated as missing. The UI does not start fixture replay automatically; an explicit `demo` IPC remains for development.
 
 ## Unix socket client
 
-`Quickshell.Io.Socket` is a client (`path` + `connected`) extending `DataStream`, so it takes a `SplitParser`. The daemon is a `UnixListener` at `$XDG_RUNTIME_DIR/snitch.sock`. This matches the documented Socket API; we do not use `SocketServer` from QML. Inbound commands are accumulated in a per-client buffer and split on `\n` so a split `panel-open` frame is not parsed or dropped.
+`Quickshell.Io.Socket` is a client (`path` + `connected`) extending `DataStream`, so it takes a `SplitParser`. The daemon is a `UnixListener` at `$XDG_RUNTIME_DIR/kub0.sock`. This matches the documented Socket API; we do not use `SocketServer` from QML. Inbound commands are accumulated in a per-client buffer and split on `\n` so a split `panel-open` frame is not parsed or dropped.
 
 ## Process supervision
 
@@ -28,23 +36,23 @@ Preferred: `pluginRegistry.isEnabled("omarchy.polkit")` — Omarchy ships a firs
 
 ## Privileged helper install and execution
 
-`omarchy plugin add` never runs install hooks (documented). The panel **Install helper** button launches `omarchy-launch-floating-terminal-with-presentation` with `cd <pluginDir> && ./scripts/setup-from-ui.sh`. Compiling writes `bin/`, which retriggers the registry inotify watcher and restarts Omarchy's in-process polkit agent — a `pkexec` prompt open at that moment is dismissed. The privileged copy therefore uses TTY `sudo` in that terminal, then best-effort `pkexec /usr/lib/snitch/snitch-block status` for `auth_admin_keep`. The service polls `/usr/lib/snitch/snitch-block` until it appears.
+`omarchy plugin add` never runs install hooks (documented). The panel **Install helper** button launches `omarchy-launch-floating-terminal-with-presentation` with `cd <pluginDir> && ./scripts/setup-from-ui.sh`. Compiling writes `bin/`, which retriggers the registry inotify watcher and restarts Omarchy's in-process polkit agent—a `pkexec` prompt open at that moment is dismissed. The privileged copy therefore uses TTY `sudo` in that terminal, then best-effort `pkexec /usr/lib/kub0/kub0-block status` to prove the policy resolves (the authorization it gets belongs to that terminal, not the shell). The service polls `/usr/lib/kub0/kub0-block` until it appears.
 
-The polkit action annotates **only** `/usr/lib/snitch/snitch-block`. Production `pkexec` invocations always use that path. Checkout/target binaries may exist for `snitchd` monitoring; they are never used for blocking. `helperInstalled` is true only when the canonical path is executable.
+Every polkit action annotates **only** `/usr/lib/kub0/kub0-block`, plus the one verb it covers (`exec.argv1`). There is no path-only action: pkexec picks the first path match, polkitd lists actions in hash order, and a path-only action matches every verb. Production `pkexec` invocations always use that path. Checkout/target binaries may exist for `kub0d` monitoring; they are never used for blocking. `helperInstalled` is true only when the canonical path is executable.
 
-`snitch-block status` (run **without** `pkexec`, so the probe cannot prompt) reports whether `nft`, `conntrack`, and cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) are present. `blockingReady` in QML is `polkitAgentPresent && helperInstalled && daemonAvailable && status.blockingReady`. Missing tools grey out block controls and set `blockHint` to the helper’s `hint` (package names). Monitoring does not consult those tools.
+`kub0-block status` (run **without** `pkexec`, so the probe cannot prompt) reports whether `nft`, `conntrack`, and cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) are present. `blockingReady` in QML is `polkitAgentPresent && helperInstalled && daemonAvailable && status.blockingReady`. Missing tools grey out block controls and set `blockHint` to the helper’s `hint` (package names). Monitoring does not consult those tools.
 
 ## Desktop icons
 
-`DesktopEntries.heuristicLookup` + `Quickshell.iconPath` are wrapped in try/catch in `SnitchAdapter.iconSource`. The panel currently shows a letter avatar if lookup fails; snitchd still ships `icon` / `desktop` fields from `.desktop` Exec/StartupWMClass matching. Hidden and NoDisplay entries are ignored.
+`DesktopEntries.heuristicLookup` + `Quickshell.iconPath` are wrapped in try/catch in `Kub0Adapter.iconSource`. The panel currently shows a letter avatar if lookup fails; kub0d still ships `icon` / `desktop` fields from `.desktop` Exec/StartupWMClass matching. Hidden and NoDisplay entries are ignored.
 
 ## IPC surface (authoritative Quattro contract)
 
-`omarchy-shell shell summon|hide|toggle|call` apply to **panel/overlay** kinds. Snitch therefore declares `kinds: ["service", "bar-widget", "panel"]` with `entryPoints.panel: "Panel.qml"` and `keepLoaded: true`.
+`omarchy-shell shell summon|hide|toggle|call` apply to **panel/overlay** kinds. The plugin therefore declares `kinds: ["service", "bar-widget", "panel"]` with `entryPoints.panel: "Panel.qml"` and `keepLoaded: true`.
 
 - Bar click still Loaders `Panel.qml` nested (clock pattern) so the popup can anchor to the pill.
-- `shell summon io.github.chris.snitch` loads the panel entry point; `open(payloadJson)` / `close()` / `toggle()` / `ping()` implement the loader contract (each accepts a string arg so `shell call … ping '{}'` type-checks).
-- The service IpcHandler (`omarchy-shell io.github.chris.snitch ping ''` / `status ''`) is a separate keep-loaded target for daemon health, not a substitute for `shell summon`. Every IpcHandler method takes `arg: string`.
+- `shell summon ai.kub0.agent` loads the panel entry point; `open(payloadJson)` / `close()` / `toggle()` / `ping()` implement the loader contract (each accepts a string arg so `shell call … ping '{}'` type-checks).
+- The service IpcHandler (`omarchy-shell ai.kub0.agent ping ''` / `status ''`) is a separate keep-loaded target for daemon health, not a substitute for `shell summon`. Every IpcHandler method takes `arg: string`.
 
 ## Theme tokens
 
@@ -60,11 +68,11 @@ Qt Canvas 2d `strokeStyle` is given CSS `rgba()` strings, not `QColor` / `Qt.rgb
 
 ## cgroup v2 socket match level
 
-The nft `level` is `cgroup_match_level(path)` (component count). For `/sys/fs/cgroup/snitch.slice/snitch-<app>` that is 2. If a distro nests the slice deeper, the computed level tracks the path we actually created. Verification prefers `nft -j list table inet snitch` and requires the **same rule** to carry the path, `socket`/`cgroupv2`, the expected level, and a `drop` verdict. Text `nft list` is the fallback and matches that complete line, not a table-wide substring.
+The nft `level` is `cgroup_match_level(path)` (component count). For `/sys/fs/cgroup/vallum.slice/vallum-<app>` that is 2. If a distro nests the slice deeper, the computed level tracks the path we actually created. Verification prefers `nft -j list table inet vallum` and requires the **same rule** to carry the path, `socket`/`cgroupv2`, the expected level, and a `drop` verdict. Text `nft list` is the fallback and matches that complete line, not a table-wide substring.
 
 ## nft CLI tokenization
 
-`snitch-block` invokes `nft` with one argv token per word (`socket cgroupv2 level 2 <path> drop`). Brace objects (`{ type filter hook output priority 0; policy accept; }`) are a single token. `nft add` EEXIST is treated as success so verbs are idempotent.
+`kub0-block` invokes `nft` with one argv token per word (`socket cgroupv2 level 2 <path> drop`). Brace objects (`{ type filter hook output priority 0; policy accept; }`) are a single token. `nft add` EEXIST is treated as success so verbs are idempotent.
 
 ## GeoIP MMDB API
 
@@ -84,4 +92,4 @@ This machine is macOS (`aarch64-apple-darwin` only; no linux-musl target, no zig
 
 ## Plugin directory fallback
 
-`manifest.__sourceDir` is stamped by PluginRegistry but is not a documented third-party API. `SnitchAdapter.pluginDir` falls back to `Qt.resolvedUrl(".")` (this QML file’s directory) so binaries, GeoJSON, flags, and replay fixtures still resolve.
+`manifest.__sourceDir` is stamped by PluginRegistry but is not a documented third-party API. `Kub0Adapter.pluginDir` falls back to `Qt.resolvedUrl(".")` (this QML file’s directory) so binaries, GeoJSON, flags, and replay fixtures still resolve.

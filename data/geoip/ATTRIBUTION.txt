@@ -2,9 +2,11 @@ IP Geolocation by DB-IP
 https://db-ip.com
 
 Database: DB-IP IP to Country Lite
+Database: DB-IP IP to ASN Lite
 License: Creative Commons Attribution 4.0 International (CC-BY-4.0)
 https://creativecommons.org/licenses/by/4.0/
 
-This plugin bundles dbip-country-lite.mmdb. You must retain this attribution
-in distributions. Reverse-DNS is off by default; Snitch does not send queries
+This plugin bundles dbip-country-lite.mmdb and dbip-asn-lite.mmdb. You must retain this attribution
+in distributions. The ASN database names each public peer's autonomous system and registrant
+and keeps shared infrastructure out of org block rules. Reverse-DNS is off by default; kub0 does not send queries
 to DB-IP or anyone else at runtime.

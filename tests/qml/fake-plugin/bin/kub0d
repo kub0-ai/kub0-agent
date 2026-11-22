@@ -1,0 +1,135 @@
+#!/usr/bin/python3
+"""Private UNIX feed for the isolated Quickshell runtime harness."""
+import json, os, socket, sys, time, fcntl
+if "--socket" not in sys.argv:
+    raise SystemExit("missing --socket")
+path = os.path.realpath(sys.argv[sys.argv.index("--socket") + 1])
+raw_root = os.environ.get("VALLUM_FIXTURE_ROOT")
+if not raw_root or not os.path.isabs(raw_root) or not os.path.isdir(raw_root):
+    raise SystemExit("designated fixture root is required")
+root = os.path.realpath(raw_root)
+if root == "/" or path == root or os.path.commonpath((root, path)) != root:
+    raise SystemExit("socket is outside designated fixture root")
+record = os.environ.get("VALLUM_ACCEPT_RECORD") or os.path.join(root, "accepts.json")
+try:
+    startup = json.load(open(record))
+except (OSError, ValueError):
+    startup = {"accepts": 0, "pids": [], "panelOpens": [], "overlapFailures": 0}
+lock = open(os.path.join(root, "daemon.lock"), "w")
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    open(os.path.join(root, "daemon-overlap"), "w").close()
+    startup["overlapFailures"] = startup.get("overlapFailures", 0) + 1
+    with open(record, "w") as f:
+        json.dump(startup, f)
+    raise SystemExit("overlapping fixture daemons")
+startup["pids"].append(os.getpid())
+with open(record, "w") as f:
+    json.dump(startup, f)
+mode = os.environ.get("VALLUM_FIXTURE_MODE", "reconnect")
+restart_marker = os.path.join(root, "daemon-restart-used")
+if mode in ("restart-once", "demo-exit") and os.path.exists(restart_marker):
+    mode = "reconnect"
+if mode == "missing":
+    time.sleep(20)
+    raise SystemExit(0)
+delay = float(os.environ.get("VALLUM_LISTENER_DELAY", "0.9"))
+if mode == "refused-delayed":
+    refused = socket.socket(socket.AF_UNIX)
+    try:
+        refused.bind(path)
+    except PermissionError as exc:
+        with open(os.path.join(root, "bind-failure.json"), "w") as f:
+            json.dump({"error": str(exc), "path": path, "fixtureRoot": root}, f)
+        print("BIND_UNAVAILABLE", str(exc), file=sys.stderr)
+        raise SystemExit(77)
+    refused.close()  # existing inode, no listener: connect must be refused
+    time.sleep(delay)
+    os.unlink(path)
+else:
+    time.sleep(delay)
+if os.path.exists(path):
+    os.unlink(path)
+listener = socket.socket(socket.AF_UNIX)
+try:
+    listener.bind(path)
+except PermissionError as exc:
+    with open(os.environ.get("VALLUM_BIND_FAILURE_RECORD", os.path.join(root, "bind-failure.json")), "w") as f:
+        json.dump({"error": str(exc), "path": path, "fixtureRoot": root}, f)
+    print("BIND_UNAVAILABLE", str(exc), file=sys.stderr)
+    raise SystemExit(77)
+listener.listen(4)
+listener.settimeout(0.25)
+record = os.environ.get("VALLUM_ACCEPT_RECORD") or os.path.join(root, "accepts.json")
+try:
+    previous = json.load(open(record))
+    accepts = int(previous.get("accepts", 0))
+    pids = list(previous.get("pids", []))
+except (OSError, ValueError, TypeError):
+    accepts = 0
+    pids = []
+panel_opens = previous.get("panelOpens", []) if "previous" in locals() else []
+deadline = time.monotonic() + 20
+while time.monotonic() < deadline:
+    try:
+        client, _ = listener.accept()
+    except TimeoutError:
+        continue
+    accepts += 1
+    if os.getpid() not in pids:
+        pids.append(os.getpid())
+    with open(record, "w") as f:
+        json.dump({"accepts": accepts, "pids": pids, "panelOpens": panel_opens, "overlapFailures": startup.get("overlapFailures", 0)}, f)
+    try:
+        now = int(time.time() * 1000)
+        events = [
+            {"type": "hello", "version": "fixture", "pid": os.getpid(),
+             "coverage": "tcp+connected-udp", "rdns": False, "mode": "user",
+             "account": {"connected": True, "node_name": "fixture-host",
+                         "github_username": "fixture", "last_heartbeat_ok": True}},
+            {"type": "snapshot", "ts": now, "connections": [{
+                "id": "fixture-unique-" + str(os.getpid()) + "-" + str(accepts), "proto": "tcp", "inode": accepts,
+                "app": {"id": "fixture-unique-" + str(os.getpid()) + "-" + str(accepts), "name": "fixture", "icon": "", "desktop": "", "pid": 1200, "system": False},
+                "local": {"ip": "192.0.2.1", "port": 50000},
+                "remote": {"ip": "198.51.100.8", "port": 443}, "state": "ESTABLISHED",
+                "country": "", "lat": 0, "lon": 0, "unresolved": False,
+                "newNetwork": False, "networkKey": "198.51.100.0/24", "hostname": ""}]},
+        ]
+        for event in events:
+            client.sendall((json.dumps(event) + "\n").encode())
+        client.settimeout(0.15)
+        until = time.monotonic() + (2.0 if mode in ("rebind", "restart-once") and accepts == 1 else 20.0)
+        buffer = b""
+        while time.monotonic() < until:
+            tick = {"type": "tick", "ts": int(time.time() * 1000), "count": 1}
+            client.sendall((json.dumps(tick) + "\n").encode())
+            try:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    if json.loads(line).get("type") == "panel-open":
+                        panel_opens.append(accepts)
+            except TimeoutError:
+                pass
+            with open(record, "w") as f:
+                json.dump({"accepts": accepts, "pids": pids, "panelOpens": panel_opens, "overlapFailures": startup.get("overlapFailures", 0)}, f)
+        client.close()
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+    if mode == "rebind" and accepts == 1:
+        listener.close()
+        os.unlink(path)
+        time.sleep(0.6)
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(path)
+        listener.listen(4)
+        listener.settimeout(0.25)
+    if mode in ("restart-once", "demo-exit"):
+        open(restart_marker, "w").close()
+        listener.close()
+        raise SystemExit(0)
+listener.close()

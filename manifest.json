@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.chris.snitch",
-  "name": "Snitch",
-  "version": "1.0.0",
-  "author": "chris",
+  "id": "ai.kub0.agent",
+  "name": "kub0",
+  "version": "0.5.1",
+  "author": "kub0-ai",
   "license": "MIT",
   "description": "Live per-app outbound connection map with country flags and one-key per-app firewall blocks.",
   "kinds": ["service", "bar-widget", "panel"],
@@ -14,7 +14,7 @@
     "panel": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Snitch",
+    "displayName": "kub0",
     "description": "Live per-app outbound connection map",
     "category": "Network",
     "allowMultiple": false,

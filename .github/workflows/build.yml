@@ -7,9 +7,41 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Runners. A private repository runs its Linux jobs on the kub0 self-hosted
+# runner when the repository variable KUB0_LINUX_RUNNER names its label,
+# because self-hosted jobs bill no Actions minutes. These workflows never ask
+# for it on a PUBLIC repository, whatever that variable says; GitHub's runners
+# are free there. That is not what protects the runner: a fork's pull request
+# brings its own workflow file and can ask for any label. What refuses it is
+# the runner group, which must stay closed to public repositories. The aarch64
+# musl job is always on ubuntu-latest because `cross` needs Docker.
 jobs:
+  native-checks:
+    runs-on: ${{ (github.event.repository.private && vars.KUB0_LINUX_RUNNER) || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - name: Install optional capture build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang libbpf-dev pkg-config nodejs
+      # Ubuntu's AppArmor blocks unprivileged user namespaces by default. The network
+      # policy live test needs one (unshare -Urn) to bind TEST-NET addresses without
+      # sending traffic off the runner.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Local regression suite
+        run: bash tests/run.sh
+      - name: Compile optional capture (no kernel attachment)
+        run: bash capture/build.sh
+
   musl:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.cross && 'ubuntu-latest' || (github.event.repository.private && vars.KUB0_LINUX_RUNNER) || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -19,10 +51,13 @@ jobs:
           - target: aarch64-unknown-linux-musl
             cross: true
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Install musl-tools (x86_64)
@@ -31,7 +66,7 @@ jobs:
 
       - name: Install cross (aarch64)
         if: ${{ matrix.cross }}
-        run: cargo install cross --locked
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Build
         run: |
@@ -41,16 +76,21 @@ jobs:
             cargo build --release --locked --workspace --target ${{ matrix.target }}
           fi
 
-      - name: Checksums
-        run: |
-          mkdir -p dist
-          t="${{ matrix.target }}"
-          cp "target/${t}/release/snitchd" "dist/snitchd-${t}"
-          cp "target/${t}/release/snitch-block" "dist/snitch-block-${t}"
-          (cd dist && sha256sum "snitchd-${t}" "snitch-block-${t}" > "SHA256SUMS-${t}")
-          cat dist/SHA256SUMS-${t}
+      # The same script a release runs, so a pull request that breaks the
+      # package (a crate with no license to print, a file the tarball needs
+      # gone) fails here and not on a tag.
+      - name: Package
+        run: bash scripts/package-release.sh "${{ matrix.target }}" dist
 
-      - uses: actions/upload-artifact@v4
+      # The job is the proof that the musl build links; the artifact is only a
+      # way to look at a PR's binaries, and nothing downloads it. So a refused
+      # upload (the account's artifact storage full: "Artifact storage quota
+      # has been hit", 2026-11-16) is a warning on the run, not a failed
+      # build, and three days is as long as one is worth keeping. At the
+      # default 90 days this repository alone held 1.3 GiB.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        continue-on-error: true
         with:
-          name: snitch-linux-${{ matrix.target }}
+          name: kub0-agent-${{ matrix.target }}
           path: dist/
+          retention-days: 3

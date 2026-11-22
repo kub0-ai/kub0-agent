@@ -36,7 +36,7 @@ Item {
       anchors.centerIn: parent
       text: root.code || "?"
       color: root.textColor
-      font.pixelSize: Math.max(7, Math.round(root.height * 0.7))
+      font.pixelSize: Math.max(9, Math.round(root.height * 0.75))
       font.bold: true
     }
   }

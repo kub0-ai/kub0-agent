@@ -1,0 +1,9 @@
+{
+  "count": 3,
+  "node_limit": 10,
+  "nodes": [
+    {"node_name": "host-a", "state": "enforced", "lsm_active": false},
+    {"node_name": "host-b", "state": "monitored"},
+    {"node_name": "host-c", "state": "down"}
+  ]
+}

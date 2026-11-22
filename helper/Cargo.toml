@@ -1,19 +1,20 @@
 [package]
-name = "snitch-block"
+name = "vallum-block"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Privileged nftables/cgroup helper for Snitch. Invoked via pkexec."
+description = "kub0-block: the privileged nftables/cgroup helper kub0d runs."
 
 [lib]
-name = "snitch_block"
+name = "vallum_block"
 path = "src/lib.rs"
 
 [[bin]]
-name = "snitch-block"
+name = "kub0-block"
 path = "src/main.rs"
 
 [dependencies]
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

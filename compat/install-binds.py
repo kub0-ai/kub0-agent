@@ -59,6 +59,26 @@ def write_text_atomic(path: str, text: str) -> None:
         raise
 
 
+# Ids this plugin had before, by its id now. Their marked blocks bind keys to
+# a plugin that no longer exists, so writing the current block removes them.
+RETIRED_IDS = {"ai.kub0.agent": ["ai.kub0.vallum"]}
+
+
+def without_block(text: str, plugin_id: str) -> str:
+    """`text` with the block marked for `plugin_id` taken out, if it has one."""
+    begin = f"-- BEGIN {plugin_id}"
+    end = f"-- END {plugin_id}"
+    if begin not in text or end not in text[text.index(begin) :]:
+        return text
+    start = text.index(begin)
+    stop = text.index(end, start) + len(end)
+    pre = text[:start].rstrip()
+    post = text[stop:].lstrip("\n")
+    if pre and post:
+        return pre + "\n\n" + post
+    return (pre + "\n") if pre else post
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print("usage: install-binds.py PLUGIN_ID LUA_BLOCK", file=sys.stderr)
@@ -81,6 +101,8 @@ def main() -> int:
         return 1
     if os.path.isfile(path):
         text = read_text_nofollow(path)
+    for old_id in RETIRED_IDS.get(plugin_id, []):
+        text = without_block(text, old_id)
     if begin in text and end in text:
         pre = text[: text.index(begin)]
         post = text[text.index(end) + len(end) :].lstrip("\n")

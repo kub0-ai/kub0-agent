@@ -1,0 +1,46 @@
+[Unit]
+Description=kub0d system-mode connection monitor and exec gate
+# Start once the network is configured, so the first deny-list stream,
+# heartbeat and fleet fetch resolve their host instead of failing DNS and
+# retrying. This only orders anything where the distro enables a wait-online
+# service (systemd-networkd-wait-online, NetworkManager-wait-online); where
+# both are masked the target is reached at once and the retry covers boot.
+# The exec gate does not wait for that sync: it arms when the daemon starts,
+# from the org list the daemon saved the last time the kub0 API returned one
+# (/var/lib/kub0/execgate/org-list.json). On a host that does wait for the
+# network, the gate therefore starts that much later in the boot.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Outside the sandbox below ("+"): the rename's one-time move of
+# /var/lib/vallum to /var/lib/kub0 needs write access to /var/lib, which the
+# daemon itself never gets. It exits 0 even when the move fails; the daemon
+# then runs from the old directory and says so.
+ExecStartPre=+/usr/lib/kub0/kub0d migrate-state
+ExecStart=/usr/lib/kub0/kub0d --system --interval-ms 500
+User=root
+# The exec content gate (fanotify FAN_OPEN_EXEC_PERM, keyed on the org deny
+# list's sha256 digests) runs in system mode by default; this line makes that
+# explicit so a reader of the unit knows it is on. Set it to 0 to run the
+# system daemon without the gate. The gate is fail-open: a slow, failed or
+# missing answer allows the exec.
+Environment=KUB0_EXEC_GATE=1
+# /run/kub0 holds the sockets and goes when the unit stops.
+RuntimeDirectory=kub0
+RuntimeDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=read-only
+# /var/lib/kub0 holds the account, the daemon's state, the exec gate's trust
+# store and requests, and the helper's block and scoped records. No
+# StateDirectory=: systemd would create /var/lib/kub0 before the move above
+# could bring the old one over. /var/lib/vallum is listed (optional, "-")
+# for one release, for a host where that move failed.
+ReadWritePaths=-/var/lib/kub0 -/var/lib/vallum
+NoNewPrivileges=no
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

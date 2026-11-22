@@ -1,0 +1,15 @@
+: heartbeat
+
+event: denylist_snapshot
+data: {"entries":[{"comm":"xmrig","path":"","action":"block","namespace_scope":""},{"comm":"","path":"/workspace/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","action":"block","namespace_scope":""}]}
+
+event: denylist_update
+data: {"comm":"nc","path":"","action":"monitor","reason":"ops review","namespace_scope":""}
+
+: heartbeat
+
+data: {"event_type":"probe_exec","engine":"vigiles","summary":"not a deny-list frame"}
+
+event: denylist_update
+data: {"comm":"xmrig","path":"","action":"remove","reason":"manual removal via API","namespace_scope":""}
+

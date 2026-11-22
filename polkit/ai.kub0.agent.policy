@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  One action per helper verb, and every action names its verb in
+  exec.argv1. pkexec takes the FIRST action whose exec.path matches, and an
+  action without exec.argv1 matches every verb (polkit 127, pkexec.c
+  find_action_for_path), while polkitd lists actions in hash-table order.
+  So a path-only catch-all would decide at random whether the verbs below
+  it get their own defaults. A verb with no action here falls back to
+  org.freedesktop.policykit.exec, which never keeps.
+
+  Verbs that raise protection keep the grant for a few minutes. Verbs that
+  lower it ask every time: the grant is held by the shell process that ran
+  pkexec, and any code the same user can load into that shell inherits it.
+
+  DEPRECATED: every kub0-block action below. The panel sends its changes
+  to the system daemon (control requests, or pkexec kub0 for what needs
+  root) and runs the helper through these only when it cannot reach the
+  system socket. They stay for that fallback and for panels installed
+  before it; no release has shipped them as deprecated yet.
+
+  The kub0 actions are the CLI path. A member of the kub0 group raises
+  protection over the daemon's socket with no prompt; a request the daemon
+  keeps to root (one that lowers protection, a login, an address block)
+  makes kub0 re-run itself as `pkexec /usr/bin/kub0 …`, and the panel runs
+  the same command. Each path has one action and no exec.argv1, which is
+  safe here because no other action shares the path. They ask every time.
+-->
+<policyconfig>
+  <vendor>kub0</vendor>
+  <vendor_url>https://kub0.ai</vendor_url>
+  <icon_name>security-high</icon_name>
+
+  <action id="ai.kub0.agent.kub0">
+    <description>Lower kub0 endpoint protection or change its org</description>
+    <message>Authentication is required to lower kub0 endpoint protection or change the org this host enforces. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/kub0</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.kub0-lib">
+    <description>Lower kub0 endpoint protection or change its org</description>
+    <message>Authentication is required to lower kub0 endpoint protection or change the org this host enforces. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.block-app">
+    <description>Block an application's network access with kub0</description>
+    <description xml:lang="en">Block an application's network access with kub0</description>
+    <message>Authentication is required to block an application's network access with kub0.</message>
+    <message xml:lang="en">Authentication is required to block an application's network access with kub0.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">block-app</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.block-scoped">
+    <description>Temporarily block an application's destination with kub0</description>
+    <message>Authentication is required to temporarily block an application's destination with kub0.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">block-scoped</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.unblock-scoped">
+    <description>Cancel a kub0 destination block</description>
+    <message>Authentication is required to cancel a kub0 destination block. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">unblock-scoped</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.expire-scoped">
+    <description>Reconcile expired kub0 destination blocks</description>
+    <message>Authentication is required to reconcile expired kub0 destination blocks. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">expire-scoped</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.block-ips">
+    <description>Block network endpoints with kub0</description>
+    <description xml:lang="en">Block network endpoints with kub0</description>
+    <message>Authentication is required to block network endpoints with kub0.</message>
+    <message xml:lang="en">Authentication is required to block network endpoints with kub0.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">block-ips</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.resume">
+    <description>Resume kub0 enforcement</description>
+    <description xml:lang="en">Resume kub0 enforcement</description>
+    <message>Authentication is required to resume kub0 enforcement.</message>
+    <message xml:lang="en">Authentication is required to resume kub0 enforcement.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">resume</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.status">
+    <description>Check the kub0 helper</description>
+    <description xml:lang="en">Check the kub0 helper</description>
+    <message>Authentication is required to check the kub0 helper.</message>
+    <message xml:lang="en">Authentication is required to check the kub0 helper.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">status</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.unblock-app">
+    <description>Unblock an application with kub0</description>
+    <description xml:lang="en">Unblock an application with kub0</description>
+    <message>Authentication is required to unblock an application with kub0. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to unblock an application with kub0. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">unblock-app</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.unblock-ips">
+    <description>Unblock network endpoints with kub0</description>
+    <description xml:lang="en">Unblock network endpoints with kub0</description>
+    <message>Authentication is required to unblock network endpoints with kub0. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to unblock network endpoints with kub0. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">unblock-ips</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.pause">
+    <description>Pause every kub0 block</description>
+    <description xml:lang="en">Pause every kub0 block</description>
+    <message>Authentication is required to pause every kub0 block on this machine. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to pause every kub0 block on this machine. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">pause</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.teardown">
+    <description>Remove every kub0 rule</description>
+    <description xml:lang="en">Remove every kub0 rule</description>
+    <message>Authentication is required to remove every kub0 rule from this machine. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to remove every kub0 rule from this machine. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">teardown</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+  <action id="ai.kub0.agent.fleet-sync">
+    <description>Apply your organization's network policy</description>
+    <description xml:lang="en">Apply your organization's network policy</description>
+    <message>Authentication is required to replace your organization's network-policy blocks on this machine. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to replace your organization's network-policy blocks on this machine. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">fleet-sync</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.fleet-clear">
+    <description>Remove your organization's network policy</description>
+    <description xml:lang="en">Remove your organization's network policy</description>
+    <message>Authentication is required to remove your organization's network-policy blocks from this machine. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to remove your organization's network-policy blocks from this machine. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">fleet-clear</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.fleet-render">
+    <description>Preview your organization's network policy rules</description>
+    <description xml:lang="en">Preview your organization's network policy rules</description>
+    <message>Authentication is required to preview kub0 network-policy rules.</message>
+    <message xml:lang="en">Authentication is required to preview kub0 network-policy rules.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">fleet-render</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <!-- Exec gate. Trusting or allowing lowers protection and asks every time;
+       removing a trust raises it and may keep the grant. The helper only
+       queues the request; the system kub0d applies it. -->
+  <action id="ai.kub0.agent.execgate-trust">
+    <description>Trust a blocked program on this machine</description>
+    <description xml:lang="en">Trust a blocked program on this machine</description>
+    <message>Authentication is required to let a program the kub0 exec gate blocked run on this machine from now on. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to let a program the kub0 exec gate blocked run on this machine from now on. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">execgate-trust</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.execgate-allow-once">
+    <description>Allow a blocked program to run once</description>
+    <description xml:lang="en">Allow a blocked program to run once</description>
+    <message>Authentication is required to let a program the kub0 exec gate blocked run once in the next five minutes. This is asked every time.</message>
+    <message xml:lang="en">Authentication is required to let a program the kub0 exec gate blocked run once in the next five minutes. This is asked every time.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">execgate-allow-once</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="ai.kub0.agent.execgate-untrust">
+    <description>Put a trusted program back under the kub0 exec gate</description>
+    <description xml:lang="en">Put a trusted program back under the kub0 exec gate</description>
+    <message>Authentication is required to remove a local trust so the kub0 exec gate blocks that program again.</message>
+    <message xml:lang="en">Authentication is required to remove a local trust so the kub0 exec gate blocks that program again.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/kub0/kub0-block</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">execgate-untrust</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

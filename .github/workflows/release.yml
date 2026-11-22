@@ -1,8 +1,21 @@
 name: release-linux
 
-# Tagged releases publish x86_64 + aarch64 musl binaries with SHA-256 checksums.
-# This is the only supported way to obtain Linux prebuilts; they are never
-# committed from the macOS authoring host.
+# A tag publishes, per architecture (x86_64 and aarch64, static musl):
+#   kub0-agent-<version>-<target>.tar.gz   unpack, then `sudo ./kub0 install`
+#   kub0-<target>, kub0d-<target>, kub0-block-<target>   the same binaries, loose
+#   SHA256SUMS-<target>                    over all of the above
+# plus LICENSE, THIRD-PARTY.md and THIRD-PARTY-LICENSES.md (the license of
+# every crate in the build graph, of Rust's standard library and of musl). The release's notes are that
+# version's section of CHANGELOG.md. This is the only supported way to obtain
+# Linux prebuilts; none are committed.
+#
+# Runners. A private repository builds x86_64 on the kub0 self-hosted runner
+# when the repository variable KUB0_LINUX_RUNNER names its label. These
+# workflows never ask for it on a PUBLIC repository, whatever that variable
+# says. That is not what protects the runner: a fork's pull request brings its
+# own workflow file and can ask for any label. What refuses it is the runner
+# group, which must stay closed to public repositories.
+# aarch64 is always on GitHub's runners because `cross` needs Docker.
 
 on:
   push:
@@ -11,10 +24,12 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   musl:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.cross && 'ubuntu-latest' || (github.event.repository.private && vars.KUB0_LINUX_RUNNER) || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,11 +39,43 @@ jobs:
           - target: aarch64-unknown-linux-musl
             cross: true
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
           targets: ${{ matrix.target }}
+
+      # A tag that does not match Cargo.toml would publish binaries that
+      # report another version than the release they are attached to.
+      - name: The tag is this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          v="$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)"
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME, but Cargo.toml says $v" >&2
+            exit 1
+          fi
+
+      # The panel installs the release manifest.json names, then compares its
+      # own version with the daemon's, which is Cargo.toml's. If the two files
+      # differ, Install kub0 fetches one version and the panel reports the
+      # other as a mismatch, on every machine, until the next release.
+      - name: The panel and the daemon are one version
+        run: |
+          v="$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)"
+          m="$(awk -F'"' '/"version"[[:space:]]*:/{print $4; exit}' manifest.json)"
+          if [ "$v" != "$m" ]; then
+            echo "Cargo.toml says $v, but manifest.json says $m" >&2
+            exit 1
+          fi
+
+      - name: Release notes
+        run: |
+          v="$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)"
+          bash scripts/release-notes.sh "$v" > release-notes.md
 
       - name: Install musl-tools (x86_64)
         if: ${{ !matrix.cross }}
@@ -36,7 +83,7 @@ jobs:
 
       - name: Install cross (aarch64)
         if: ${{ matrix.cross }}
-        run: cargo install cross --locked
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Build
         run: |
@@ -46,25 +93,64 @@ jobs:
             cargo build --release --locked --workspace --target ${{ matrix.target }}
           fi
 
-      - name: Checksums
-        run: |
-          mkdir -p dist
-          t="${{ matrix.target }}"
-          cp "target/${t}/release/snitchd" "dist/snitchd-${t}"
-          cp "target/${t}/release/snitch-block" "dist/snitch-block-${t}"
-          (cd dist && sha256sum "snitchd-${t}" "snitch-block-${t}" > "SHA256SUMS-${t}")
-          cat "dist/SHA256SUMS-${t}"
+      - name: Package
+        run: bash scripts/package-release.sh "${{ matrix.target }}" dist
 
-      - uses: actions/upload-artifact@v4
+      # Signed provenance for what a release attaches: which workflow, at
+      # which commit, built it. `gh attestation verify <file> --repo
+      # <owner>/<repo>` checks it. Only on a tag: a run started by hand from a
+      # branch must not mint a provenance that verifies as a release's. GitHub
+      # offers this to public repositories only on the plan this organisation
+      # is on, so a private repository skips it.
+      - name: Attest
+        if: ${{ startsWith(github.ref, 'refs/tags/') && !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
-          name: snitch-linux-${{ matrix.target }}
-          path: dist/
+          subject-path: |
+            dist/kub0-agent-*.tar.gz
+            dist/kub0-${{ matrix.target }}
+            dist/kub0d-${{ matrix.target }}
+            dist/kub0-block-${{ matrix.target }}
+            dist/SHA256SUMS-${{ matrix.target }}
+            dist/THIRD-PARTY-LICENSES.md
 
+      # Both jobs pass the same notes: whichever creates the Release writes
+      # them, and the other finds them already there.
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/kub0-agent-*-${{ matrix.target }}.tar.gz
+            dist/kub0d-${{ matrix.target }}
+            dist/kub0-block-${{ matrix.target }}
+            dist/kub0-${{ matrix.target }}
+            dist/SHA256SUMS-${{ matrix.target }}
+
+      # The three notice files ride on the x86_64 job only: both matrix jobs
+      # would otherwise upload the same asset names and race on the
+      # delete-then-replace softprops does for an existing name.
+      # THIRD-PARTY-LICENSES.md lists both targets' crates in either job, so
+      # the one copy is right for every binary.
+      - name: Attach the license notices
+        if: ${{ startsWith(github.ref, 'refs/tags/') && !matrix.cross }}
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
-            dist/snitchd-${{ matrix.target }}
-            dist/snitch-block-${{ matrix.target }}
-            dist/SHA256SUMS-${{ matrix.target }}
+            LICENSE
+            THIRD-PARTY.md
+            dist/THIRD-PARTY-LICENSES.md
+
+      # After the Release has its files, never before: on a tag the Release is
+      # the product, and this copy on the run is spare. A refused upload (the
+      # account's artifact storage full) used to stop the job here, ahead of
+      # the attach steps, and leave a release with no binaries. A run without
+      # a tag (workflow_dispatch) has no Release, so there the upload is the
+      # only output and its failure still fails the job.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        continue-on-error: ${{ startsWith(github.ref, 'refs/tags/') }}
+        with:
+          name: kub0-agent-${{ matrix.target }}
+          path: dist/
+          retention-days: 3

@@ -1,0 +1,23 @@
+{
+  "version": 7,
+  "entries": [
+    {
+      "comm": "curl",
+      "path": "/usr/bin/curl",
+      "action": "block",
+      "reason": "org policy",
+      "namespace_scope": "",
+      "promoted_by": "alice",
+      "created_at": "2026-09-18T00:00:00Z"
+    },
+    {
+      "comm": "wget",
+      "path": "",
+      "action": "block",
+      "reason": "unattended fetch",
+      "namespace_scope": "",
+      "promoted_by": "",
+      "created_at": ""
+    }
+  ]
+}

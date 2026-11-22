@@ -1,0 +1,19 @@
+[package]
+name = "kub0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The kub0 endpoint CLI: account, exec gate, blocks and fleet over the kub0d socket"
+
+[[bin]]
+name = "kub0"
+path = "src/main.rs"
+
+# Deliberately not a dependency of the `vallumd` library: that would link the
+# bundled SQLite, the geo reader and the HTTP client into a binary whose whole
+# job is a unix socket and some JSON. The two constants it shares with the
+# daemon (the system socket and the helper path) are pinned by a test.
+[dependencies]
+libc = "0.2"
+serde_json = "1"
