@@ -91,6 +91,13 @@ SEC("cgroup/sendmsg6") int sendmsg6(struct bpf_sock_addr *ctx) {
  * 1). TCP, DoT and DoH are not seen. */
 #define DNS_MAX_LABELS 64
 #define DNS_MAX_ANSWERS 8
+/* The question name on a program's stack, 8-aligned. dns_emit copies it into
+ * the ring record, and from a buffer of alignment 1 clang 21 and 22 make that
+ * copy a byte at a time, keeping every word they loaded alive: 584 bytes of
+ * stack in dns_ingress, where the verifier allows 512, so the program did not
+ * compile. Aligned, the copy is word by word and the frame is 384 bytes.
+ * clang 23 emits the same instructions with or without this. */
+#define QNAME_ALIGNED __attribute__((aligned(8)))
 struct dnshdr {
   __u16 id, flags, qdcount, ancount, nscount, arcount;
 };
@@ -249,7 +256,7 @@ SEC("cgroup_skb/egress") int dns_egress(struct __sk_buff *skb) {
   // A query (QR clear) with exactly one question.
   if ((bpf_ntohs(h.flags) & 0x8000) || bpf_ntohs(h.qdcount) != 1)
     return 1;
-  __u8 qname[KUB0_DNS_QNAME_MAX] = {0};
+  __u8 qname[KUB0_DNS_QNAME_MAX] QNAME_ALIGNED = {0};
   __u32 qlen = 0, qhash = 0;
   if (dns_qname(skb, off + sizeof(h), qname, &qlen, &qhash))
     return 1;
@@ -289,7 +296,7 @@ SEC("cgroup_skb/ingress") int dns_ingress(struct __sk_buff *skb) {
       bpf_ntohs(h.qdcount) != 1 || bpf_ntohs(h.ancount) == 0)
     return 1;
   off += sizeof(h);
-  __u8 qname[KUB0_DNS_QNAME_MAX] = {0};
+  __u8 qname[KUB0_DNS_QNAME_MAX] QNAME_ALIGNED = {0};
   __u32 qlen = 0, qhash = 0;
   if (dns_qname(skb, off, qname, &qlen, &qhash))
     return 1;
