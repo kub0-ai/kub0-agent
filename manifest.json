@@ -5,7 +5,7 @@
   "version": "0.5.1",
   "author": "kub0-ai",
   "license": "MIT",
-  "description": "Live per-app outbound connection map with country flags and one-key per-app firewall blocks.",
+  "description": "Where every app on this machine connects, by country and network: a live map, one-key per-app blocks, traffic history, and a kub0 command that does the same from a terminal.",
   "kinds": ["service", "bar-widget", "panel"],
   "keepLoaded": true,
   "entryPoints": {
