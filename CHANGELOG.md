@@ -18,6 +18,10 @@ the databases it enforces from, from its data dir only.
   in it is a real connection: every address is from a documentation range
   and every host name ends in `.example`, and a test holds the fixture to
   that.
+- The plugin's description, the sentence a listing shows under its name, says
+  what this panel does: where each app connects by country and network,
+  per-app blocks, traffic history, and the `kub0` command. It was the
+  upstream project's sentence.
 - The panel installs with `omarchy plugin add
   https://github.com/kub0-ai/kub0-agent --enable`, and a panel with no daemon
   says what to do next. Before, all it said was "kub0d is not available".
