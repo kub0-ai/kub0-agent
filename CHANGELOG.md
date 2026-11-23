@@ -113,6 +113,11 @@ the databases it enforces from, from its data dir only.
   The panel's own daemon is given its data dir, and a bare `kub0d` defaults
   to `data`, so neither used the third place. (`--mmdb` can still name the
   map's country database anywhere. Nothing that enforces a rule reads it.)
+- The optional kernel capture builds with clang 21 and 22, which is what
+  Ubuntu 26.04 installs. `capture/build.sh` stopped there with "BPF stack
+  limit is exceeded": the DNS response program needed 584 bytes of stack
+  where the kernel allows 512. It needs 384 now. With clang 23 the program
+  that is built is the same, instruction for instruction.
 
 ## 0.5.0 (2026-11-20)
 
