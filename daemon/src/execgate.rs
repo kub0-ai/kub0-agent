@@ -3555,7 +3555,18 @@ mod tests {
         // Close-on-exec: a process another test starts must not carry the write
         // end for its whole life, or the pipe never reads as closed below.
         let mut fds = [0i32; 2];
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) }, 0);
+        // macOS has no pipe2, so the flag goes on in a second step there. A
+        // process started in the gap between the two keeps the write end for
+        // as long as it runs: a narrower window than no flag, not a closed one.
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+            for fd in fds {
+                assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) }, 0);
+            }
+        }
         let flags = unsafe { libc::fcntl(fds[0], libc::F_GETFL) };
         assert!(flags >= 0);
         assert_eq!(

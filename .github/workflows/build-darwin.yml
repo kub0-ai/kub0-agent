@@ -1,12 +1,13 @@
 name: build-darwin
-# macOS runners bill at ten times the Linux rate on a private repository, so
-# these two jobs run on main, on release tags and by hand, not on every pull
-# request. A pull request that touches the darwin side can ask for one with
-#   gh workflow run build-darwin.yml --ref <branch>
+# Two macOS jobs, on every pull request as well as on main, on release tags
+# and by hand. They were kept off pull requests while this repository was
+# private, where macOS runners bill at ten times the Linux rate, and a test
+# that did not compile on macOS reached main without one run to say so.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
