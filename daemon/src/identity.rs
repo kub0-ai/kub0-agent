@@ -21,6 +21,18 @@ const OVERFLOW_UID: u32 = u32::MAX;
 /// Most users a desktop ever has; a bound on the per-user caches below.
 const MAX_USERS: usize = 64;
 
+/// The largest `.desktop` file read. The ones packages ship run to tens of
+/// kilobytes, almost all of it translated names.
+const DESKTOP_FILE_MAX: usize = 256 * 1024;
+
+/// What one account's own applications directory may cost the system daemon,
+/// which reads it as root on the thread that samples connections: this many
+/// directory entries looked at, and this many bytes read. A person's own
+/// directory holds tens of entries; past either bound the rest are not read
+/// and those apps take their names from the shared directories.
+const USER_DESKTOP_ENTRIES_MAX: usize = 1024;
+const USER_DESKTOP_BYTES_MAX: usize = 8 * 1024 * 1024;
+
 /// A passwd entry, reduced to what naming a process needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Passwd {
@@ -189,7 +201,7 @@ impl AppResolver {
         }
         let mut recs = Vec::new();
         if let Some(home) = self.passwd_for(uid).map(|p| p.home).filter(|h| !h.is_empty() && h != "/") {
-            scan_desktop_dir(&PathBuf::from(home).join(".local/share/applications"), &mut recs);
+            scan_user_desktop_dir(&PathBuf::from(home).join(".local/share/applications"), uid, &mut recs);
         }
         self.user_desktops.insert(uid, recs);
     }
@@ -223,6 +235,9 @@ fn find_desktop<'a>(desktops: &'a [DesktopRecord], exe_base: &str, comm: &str) -
     })
 }
 
+/// The daemon's own and the shared applications directories. Each file goes
+/// through the guarded reader: a pipe, a device or an oversized file in one
+/// of them is skipped, not waited on.
 fn scan_desktop_dir(dir: &Path, out: &mut Vec<DesktopRecord>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -233,7 +248,42 @@ fn scan_desktop_dir(dir: &Path, out: &mut Vec<DesktopRecord>) {
         if p.extension().and_then(|s| s.to_str()) != Some("desktop") {
             continue;
         }
-        if let Ok(text) = std::fs::read_to_string(&p) {
+        if let Some(text) = crate::fileguard::read_capped(&p, DESKTOP_FILE_MAX) {
+            if let Some(rec) = parse_desktop(&text, &p) {
+                out.push(rec);
+            }
+        }
+    }
+}
+
+/// Another account's applications directory, read by the system daemon. The
+/// account chooses everything in it, so nothing in it is trusted: only
+/// regular files that `uid` owns are read (`fileguard::read_capped_owned`),
+/// each to a ceiling, and the whole scan stops at
+/// `USER_DESKTOP_ENTRIES_MAX` entries or `USER_DESKTOP_BYTES_MAX` bytes.
+fn scan_user_desktop_dir(dir: &Path, uid: u32, out: &mut Vec<DesktopRecord>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let mut bytes = 0usize;
+    for (seen, ent) in entries.enumerate() {
+        if seen >= USER_DESKTOP_ENTRIES_MAX || bytes >= USER_DESKTOP_BYTES_MAX {
+            eprintln!(
+                "kub0d: uid {uid}: {} holds more than is read ({USER_DESKTOP_ENTRIES_MAX} entries, {} MiB); the rest of its apps are named from the shared directories",
+                dir.display(),
+                USER_DESKTOP_BYTES_MAX / (1024 * 1024)
+            );
+            return;
+        }
+        let Ok(ent) = ent else { continue };
+        let p = ent.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("desktop") {
+            continue;
+        }
+        let ceiling = DESKTOP_FILE_MAX.min(USER_DESKTOP_BYTES_MAX - bytes);
+        if let Some(text) = crate::fileguard::read_capped_owned(&p, ceiling, uid) {
+            bytes += text.len();
             if let Some(rec) = parse_desktop(&text, &p) {
                 out.push(rec);
             }
@@ -722,5 +772,162 @@ mod tests {
         assert_eq!(root.name, "root");
         assert!(!root.home.is_empty());
         assert_eq!(passwd_entry(OVERFLOW_UID - 7), None);
+    }
+
+    // What another account can leave in its own applications directory, and
+    // what the system daemon does when it meets it. The scan runs in a child
+    // process: a read that never returns cannot be cancelled from inside the
+    // process that made it, and one that fills memory must not do so here.
+
+    const FOREIGN_HOME: &str = "KUB0_TEST_FOREIGN_HOME";
+
+    /// The child's half. It does nothing unless a test below set the
+    /// variable: the system daemon (root, here whoever runs the tests)
+    /// meets a process of the account whose home that is.
+    #[test]
+    fn foreign_home_scan_child() {
+        let Some(home) = std::env::var_os(FOREIGN_HOME) else { return };
+        let uid = unsafe { libc::geteuid() };
+        let mut r = AppResolver {
+            desktops: Vec::new(),
+            cache: HashMap::new(),
+            our_uid: uid.wrapping_add(1),
+            system: true,
+            uid_min: 0,
+            passwd: HashMap::new(),
+            user_desktops: HashMap::new(),
+        };
+        r.passwd.insert(uid, Some(Passwd { name: "alice".into(), home: home.to_string_lossy().into_owned() }));
+        let id = r.resolve(4242, uid, "/opt/tool/tool-bin", "tool-bin");
+        println!("FOREIGN-SCAN name={} records={}", id.name, r.user_desktops.get(&uid).map_or(0, Vec::len));
+    }
+
+    struct ForeignHome(PathBuf);
+    impl ForeignHome {
+        /// A home with one honest entry in its applications directory.
+        fn new(tag: &str) -> Self {
+            let home = std::env::temp_dir().join(format!("kub0-foreign-home-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&home);
+            let apps = home.join(".local/share/applications");
+            std::fs::create_dir_all(&apps).unwrap();
+            std::fs::write(apps.join("tool.desktop"), "[Desktop Entry]\nName=Example Tool\nExec=tool-bin\n").unwrap();
+            Self(home)
+        }
+        fn apps(&self) -> PathBuf {
+            self.0.join(".local/share/applications")
+        }
+    }
+    impl Drop for ForeignHome {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct Scan {
+        /// The child's `FOREIGN-SCAN` line, or `None` if it was killed at
+        /// the deadline or died.
+        line: Option<String>,
+        /// The most memory the child held, in KiB (Linux's `ru_maxrss`).
+        peak_kib: i64,
+    }
+
+    /// Resolve one process of the account whose home is `home`, in a child
+    /// with a ceiling on its address space, and wait for it until `deadline`.
+    fn scan_in_child(home: &Path, deadline: std::time::Duration) -> Scan {
+        use std::io::Read;
+        use std::os::unix::process::CommandExt;
+        let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+        cmd.args(["identity::tests::foreign_home_scan_child", "--exact", "--nocapture", "--test-threads=1"])
+            .env(FOREIGN_HOME, home)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        // A read with no end stops at this much instead of at the machine's
+        // memory. Nothing honest in these tests comes near it.
+        unsafe {
+            cmd.pre_exec(|| {
+                let cap = libc::rlimit { rlim_cur: 1 << 30, rlim_max: 1 << 30 };
+                libc::setrlimit(libc::RLIMIT_AS, &cap);
+                Ok(())
+            });
+        }
+        let mut child = cmd.spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        let started = std::time::Instant::now();
+        let mut status = 0;
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        let mut finished = false;
+        loop {
+            if unsafe { libc::wait4(pid, &mut status, libc::WNOHANG, &mut usage) } == pid {
+                finished = true;
+                break;
+            }
+            if started.elapsed() >= deadline {
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                    libc::wait4(pid, &mut status, 0, &mut usage);
+                }
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let mut out = String::new();
+        let _ = child.stdout.take().unwrap().read_to_string(&mut out);
+        let ok = finished && libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0;
+        Scan {
+            // The harness prints "test <name> ... " ahead of it on the same line.
+            line: out.lines().find_map(|l| l.find("FOREIGN-SCAN ").map(|at| l[at..].to_string())).filter(|_| ok),
+            peak_kib: usage.ru_maxrss as i64,
+        }
+    }
+
+    #[test]
+    fn a_fifo_named_like_a_desktop_entry_does_not_stall_the_system_daemon() {
+        let home = ForeignHome::new("fifo");
+        let fifo = std::ffi::CString::new(home.apps().join("aaa.desktop").to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o644) }, 0, "mkfifo");
+        // Nothing will ever write to it. Opening it for reading the plain
+        // way waits for a writer, on the thread that samples connections.
+        let scan = scan_in_child(&home.0, std::time::Duration::from_secs(10));
+        let line = scan.line.expect("the scan of that home had not returned after 10 s: the sampling thread is stalled");
+        assert!(line.contains("name=Example Tool "), "the honest entry beside it still names the app: {line}");
+    }
+
+    #[test]
+    fn another_accounts_directory_is_read_only_as_far_as_the_bounds() {
+        let home = ForeignHome::new("bounds");
+        let me = unsafe { libc::geteuid() };
+        // Owned by someone else: the same directory, scanned for an account
+        // that owns none of it, yields nothing.
+        let mut none = Vec::new();
+        scan_user_desktop_dir(&home.apps(), me.wrapping_add(1), &mut none);
+        assert!(none.is_empty(), "files the account does not own were read: {}", none.len());
+        // Oversized: skipped, and the honest entry is still read.
+        let mut big = String::from("[Desktop Entry]\nName=Big\nExec=big-bin\n");
+        big.push_str(&"#".repeat(DESKTOP_FILE_MAX));
+        std::fs::write(home.apps().join("big.desktop"), big).unwrap();
+        let mut some = Vec::new();
+        scan_user_desktop_dir(&home.apps(), me, &mut some);
+        assert_eq!(some.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["Example Tool"]);
+        // More entries than are looked at: the scan stops, with fewer
+        // records than there are files.
+        for i in 0..USER_DESKTOP_ENTRIES_MAX + 40 {
+            std::fs::write(home.apps().join(format!("n{i}.desktop")), format!("[Desktop Entry]\nName=N{i}\nExec=n{i}\n")).unwrap();
+        }
+        let mut capped = Vec::new();
+        scan_user_desktop_dir(&home.apps(), me, &mut capped);
+        assert!(capped.len() <= USER_DESKTOP_ENTRIES_MAX, "{} records", capped.len());
+        assert!(capped.len() >= USER_DESKTOP_ENTRIES_MAX - 2, "the bound is on entries looked at, not a refusal: {} records", capped.len());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_desktop_entry_that_is_a_device_is_not_read_into_memory() {
+        let home = ForeignHome::new("zero");
+        std::os::unix::fs::symlink("/dev/zero", home.apps().join("aaa.desktop")).unwrap();
+        let scan = scan_in_child(&home.0, std::time::Duration::from_secs(30));
+        let peak_mib = scan.peak_kib / 1024;
+        assert!(peak_mib < 128, "the daemon held {peak_mib} MiB reading another account's applications directory");
+        let line = scan.line.expect("the scan of that home did not finish");
+        assert!(line.contains("name=Example Tool "), "the honest entry beside it still names the app: {line}");
     }
 }

@@ -57,13 +57,33 @@ pub fn ro_uri(path: &Path) -> String {
 /// belonging to another program being absent, unreadable, or absurd are all the
 /// same situation from vallum's side.
 pub fn read_capped(path: &Path, ceiling: usize) -> Option<String> {
+    read_guarded(path, ceiling, None)
+}
+
+/// `read_capped` for a file in another account's home, read by a daemon that
+/// is root: the file that was opened must also belong to `owner`.
+///
+/// Root can open anything, and the path is the other account's to choose. A
+/// link there to a file only root may read would otherwise have root read it
+/// on that account's behalf. A file the account owns is one it could read
+/// itself. The price is that an entry linked in from a root-owned store (a
+/// package manager's, say) is not read; the shared directories name those.
+pub fn read_capped_owned(path: &Path, ceiling: usize, owner: u32) -> Option<String> {
+    read_guarded(path, ceiling, Some(owner))
+}
+
+fn read_guarded(path: &Path, ceiling: usize, owner: Option<u32>) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
     let real = std::fs::canonicalize(path).ok()?;
     let file = File::options()
         .read(true)
-        .custom_flags(libc::O_NONBLOCK)
+        // O_NOCTTY: a terminal opened by a daemon that has none must not
+        // become its controlling terminal.
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
         .open(real)
         .ok()?;
-    if !file.metadata().ok()?.is_file() {
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || owner.is_some_and(|uid| meta.uid() != uid) {
         return None;
     }
     let mut buf = Vec::with_capacity(ceiling.min(64 * 1024) + 1);
@@ -150,6 +170,32 @@ mod tests {
         // write. A test suite that hangs is how you find out you removed it.
         assert!(read_capped(&p, 64).is_none());
         std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn owned_read_refuses_a_file_that_is_someone_elses() {
+        use std::os::unix::fs::MetadataExt;
+        let d = tmpdir("owned");
+        let p = d.join("mine");
+        File::create(&p).unwrap().write_all(b"ok").unwrap();
+        let me = std::fs::metadata(&p).unwrap().uid();
+        assert_eq!(read_capped_owned(&p, 64, me).as_deref(), Some("ok"));
+        // The same bytes, asked for on behalf of an account that does not own them.
+        assert!(read_capped_owned(&p, 64, me.wrapping_add(1)).is_none());
+        // Ownership is the opened file's, not the link's: a link of mine to
+        // a file that is not mine is still not mine.
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&p, &link).unwrap();
+        assert_eq!(read_capped_owned(&link, 64, me).as_deref(), Some("ok"));
+        assert!(read_capped_owned(&link, 64, me.wrapping_add(1)).is_none());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn capped_read_refuses_a_device_without_reading_it() {
+        // /dev/zero never ends; a plain read of it fills memory.
+        assert!(read_capped(Path::new("/dev/zero"), 64).is_none());
+        assert!(read_capped_owned(Path::new("/dev/zero"), 64, 0).is_none());
     }
 
     #[test]
