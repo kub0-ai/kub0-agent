@@ -5,6 +5,11 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+- **Install kub0** installs 0.5.2. The panel now carries the digests of the
+  two 0.5.2 tarballs, taken from downloads whose build provenance for the
+  0.5.2 tag verified. Between the tag and this change the button downloaded
+  nothing and said so.
+
 ## 0.5.2 (2026-11-25)
 
 Four security fixes, all found in the Omarchy plugin marketplace's review of
