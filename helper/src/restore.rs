@@ -53,7 +53,14 @@ pub fn load(path: &Path) -> RestoreFile {
 
 pub fn save(path: &Path, file: &RestoreFile) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        crate::rename::create_state_dir(parent, 0o755).map_err(|e| format!("mkdir restore: {e}"))?;
+        if !parent.is_dir() {
+            // The state root is made 0755 on the way. These records name
+            // processes, their owners and their cgroups, and only root's
+            // helper reads them: the directory is root's alone.
+            use std::os::unix::fs::PermissionsExt;
+            crate::rename::create_state_dir(parent, 0o755).map_err(|e| format!("mkdir restore: {e}"))?;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("close restore: {e}"))?;
+        }
     }
     let text = serde_json::to_string_pretty(file).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");

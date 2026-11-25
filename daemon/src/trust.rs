@@ -31,6 +31,11 @@ pub const REQUESTS_FILE: &str = "requests.ndjson";
 pub const REQUESTS_LOCK: &str = "requests.lock";
 /// The frame the user daemon mirrors into its fleet event.
 pub const STATE_FILE: &str = "state.json";
+/// `state.json` and the trusted list: root's, and the group's that the gate's
+/// directory is in (`statedir::share_with_group`), which is how a per-user
+/// daemon in the `kub0` group reads the frame. Not other accounts': the frame
+/// carries the path, pid and digest of every exec the gate stopped.
+pub const STATE_FILE_MODE: u32 = 0o640;
 /// The org deny list as the API last returned it, so a restarted daemon arms
 /// before its first sync (`execgate.rs`). Mode 0600: it names the account.
 pub const ORG_LIST_FILE: &str = "org-list.json";
@@ -218,7 +223,7 @@ impl TrustStore {
         };
         let text = serde_json::to_string_pretty(&doc)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        write_atomic(path, text.as_bytes(), 0o644)
+        write_atomic(path, text.as_bytes(), STATE_FILE_MODE)
     }
 }
 
@@ -513,7 +518,7 @@ mod tests {
         assert_eq!(store.entries()[0].added_at, 1000);
         assert_eq!(store.entries()[1].sha256, B);
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o644, "the trusted list is readable; it holds digests only");
+        assert_eq!(mode, 0o640, "the trusted list is root's and the gate directory's group's, like state.json");
     }
 
     #[test]

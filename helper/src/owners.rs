@@ -48,33 +48,91 @@ pub fn lock(path: &Path, owner: u32) -> Result<File, String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct OwnerFile {
     #[serde(default)]
     apps: BTreeMap<String, Vec<String>>,
 }
 
-pub fn load(path: &Path) -> OwnerMap {
-    let text = std::fs::read_to_string(path).unwrap_or_default();
-    let parsed: OwnerFile = serde_json::from_str(&text).unwrap_or_default();
+/// The owner map at `path`. No file is no blocks yet. A file that is there
+/// and cannot be read as the map (unreadable, empty, cut short, not this
+/// JSON) is an error, never an empty map: the next save would write that
+/// emptiness over the only record of who blocked what, and an unblock after
+/// it would release an address another app still needs blocked.
+pub fn load(path: &Path) -> Result<OwnerMap, String> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(OwnerMap::new()),
+        Err(e) => return Err(unusable(path, &e.to_string())),
+    };
+    // An object, and nothing in it but `apps`: serde would otherwise take
+    // `[]`, or a map in some other shape, for a file with no owners in it.
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| unusable(path, &e.to_string()))?;
+    if !value.is_object() {
+        return Err(unusable(path, "not a JSON object"));
+    }
+    let parsed: OwnerFile = serde_json::from_value(value).map_err(|e| unusable(path, &e.to_string()))?;
     let mut map = OwnerMap::new();
     for (app, ips) in parsed.apps {
         map.insert(app, ips.into_iter().collect());
     }
-    map
+    Ok(map)
 }
 
+/// What a caller is told when the record is there and unusable. The way out
+/// is in the message, because nothing else will lift these blocks.
+fn unusable(path: &Path, why: &str) -> String {
+    format!(
+        "{} cannot be read as the record of which app blocked which address ({why}); nothing was changed. \
+         The addresses in it stay blocked. To lift every block and start again: sudo kub0 teardown --yes",
+        path.display()
+    )
+}
+
+/// The mode of the owner map. The panel runs `status` as the user it runs
+/// as, and reads this file through it; it holds app ids and the addresses
+/// blocked for them.
+const OWNER_FILE_MODE: u32 = 0o644;
+
+/// Replace the map at `path`: written beside it, synced, then renamed over
+/// it, so a crash leaves the old map or the new one and never a file cut
+/// short. The mode is set, not left to the caller's umask.
 pub fn save(path: &Path, map: &OwnerMap) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        crate::rename::create_state_dir(parent, 0o755).map_err(|e| format!("mkdir owners: {e}"))?;
-    }
+    use std::io::Write;
+    let parent = path.parent().ok_or("owner map has no parent directory")?;
+    crate::rename::create_state_dir(parent, 0o755).map_err(|e| format!("mkdir owners: {e}"))?;
     let mut file = OwnerFile::default();
     for (app, ips) in map {
         file.apps.insert(app.clone(), ips.iter().cloned().collect());
     }
     let text = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, text).map_err(|e| format!("write owners: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename owners: {e}"))
+    let written = (|| {
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(OWNER_FILE_MODE)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(&tmp)?;
+        f.set_permissions(fs::Permissions::from_mode(OWNER_FILE_MODE))?;
+        f.write_all(text.as_bytes())?;
+        f.sync_all()
+    })();
+    if let Err(e) = written {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("write owners: {e}"));
+    }
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("rename owners: {e}"));
+    }
+    // The rename is what a crash must not lose. The map is already in place,
+    // so a directory that cannot be synced is not a failed save.
+    if let Ok(dir) = File::open(parent) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
 }
 
 pub fn grant(map: &mut OwnerMap, app: &str, ips: &[String]) {
@@ -141,8 +199,9 @@ mod tests {
         let mut map = OwnerMap::new();
         grant(&mut map, "firefox", &["8.8.8.8".into()]);
         save(&path, &map).unwrap();
-        let loaded = load(&path);
+        let loaded = load(&path).unwrap();
         assert!(loaded.get("firefox").unwrap().contains("8.8.8.8"));
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, OWNER_FILE_MODE, "the mode is set, whatever the umask");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -183,7 +242,42 @@ mod tests {
         let mut next = old.clone();
         grant(&mut next, "app-b", &["8.8.8.8".into()]);
         assert!(save(&path, &next).is_err());
-        assert_eq!(load(&path), old);
+        assert_eq!(load(&path).unwrap(), old);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn only_a_missing_file_is_an_empty_map() {
+        let dir = std::env::temp_dir().join(format!("kub0-owner-load-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("endpoint-owners.json");
+        assert_eq!(load(&path), Ok(OwnerMap::new()), "no file: no blocks yet");
+        for damage in ["", "{", "[]", "null", "{\"app-a\": [\"203.0.113.7\"]}", "{\"apps\": {\"app-a\": [\"203.0.113.7\""] {
+            fs::write(&path, damage).unwrap();
+            let e = load(&path).expect_err(damage);
+            assert!(e.contains("sudo kub0 teardown --yes") && e.contains("nothing was changed"), "{e}");
+        }
+        // Something there that is not a file at all: unreadable, not absent.
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(load(&path).is_err(), "a path that cannot be read is not an empty map");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_save_does_not_follow_a_link_left_at_its_temporary_name() {
+        let dir = std::env::temp_dir().join(format!("kub0-owner-tmp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("endpoint-owners.json");
+        let elsewhere = dir.join("elsewhere");
+        fs::write(&elsewhere, "untouched").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, path.with_extension("json.tmp")).unwrap();
+        let mut map = OwnerMap::new();
+        grant(&mut map, "app-a", &["203.0.113.7".into()]);
+        assert!(save(&path, &map).is_err());
+        assert_eq!(fs::read_to_string(&elsewhere).unwrap(), "untouched");
         fs::remove_dir_all(dir).unwrap();
     }
 }

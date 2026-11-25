@@ -466,6 +466,11 @@ pub fn checks() -> Vec<Check> {
             Check { name: "exec gate", state, detail: format!("{}: {detail}", gate.display()) }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Check { name: "exec gate", state: State::Warn, detail: "no state file yet; the system daemon writes it once it starts".into() },
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Check {
+            name: "exec gate",
+            state: State::Unknown,
+            detail: format!("{}: readable by root and members of the kub0 group only", gate.display()),
+        },
         Err(e) => Check { name: "exec gate", state: State::Unknown, detail: format!("{}: {e}", gate.display()) },
     });
 

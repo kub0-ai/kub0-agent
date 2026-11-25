@@ -18,6 +18,49 @@ from the private repository this was developed in before it was published.
   says to update the plugin or build from source. The two 0.5.1 tarballs
   are pinned; both carry a build provenance for the 0.5.1 tag, and nothing
   suggests either was ever replaced.
+- The system daemon's records could be read by every account on the machine,
+  not only by root and the `kub0` group. `/var/lib/kub0/daemon` and
+  `/var/lib/kub0/execgate` were created 0755 and most files in them 0644:
+  the log of unattributed connections (account, address, host name), the
+  activity timeline, network names, and the exec gate's frame with the path
+  and digest of everything it stopped. The history database beside them was
+  already private. Now `daemon/` is root's alone (0700), `execgate/` is
+  root's and the `kub0` group's (2750, `state.json` 0640), and the helper's
+  `cgroup-restore/` is root's alone. The daemon applies this at every start,
+  so an existing install is closed by the first start after updating; the
+  journal says once what it closed. Without a usable `kub0` group
+  `execgate/` is root's alone. The per-user daemon closes
+  `~/.local/state/kub0` the same way. `SECURITY.md` has the table of what is
+  where and who reads it.
+  - Still readable by every account, on purpose: which apps are blocked, the
+    addresses of "endpoints only" blocks, and whether enforcement is paused.
+    The panel reads those through `kub0-block status` as whoever runs it.
+  - One thing a session outside the group loses: a per-user daemon there
+    (source build, before the first login after `kub0 install`) no longer
+    mirrors the exec gate, so that panel shows no exec gate until you log
+    in again. `kub0 doctor` says the file is the group's when it cannot
+    read it.
+- An "endpoints only" block could be lifted by another app's unblock. The
+  helper keeps one file that says which app blocked which address, and it
+  read a file it could not understand (damaged, or empty after a crash in
+  the middle of a write) as "no blocks". The next block then saved that
+  near-empty record over the real one, and unblocking that app released an
+  address a different app still had blocked. Now only a missing file means
+  no blocks. A file that is there and unreadable stops the block or unblock
+  before anything changes, and the message names the way out: `sudo kub0
+  teardown --yes` lifts every block and starts again. The file is also
+  written so that a crash leaves the old record or the new one, with its
+  mode set rather than left to the caller's umask, and `kub0-block status`
+  says `ownersKnown: false` instead of showing an unreadable record as empty.
+- On the system daemon, one file in another account's
+  `~/.local/share/applications` could stop monitoring for everyone. The
+  daemon reads those `.desktop` files, as root, to name that account's apps,
+  and it read whatever was there: a named pipe ending in `.desktop` made it
+  wait for ever, on the thread that samples connections, and a link to a
+  device such as `/dev/zero` was read without end. It now reads only regular
+  files that the account itself owns, each up to 256 KiB, and at most 1,024
+  entries or 8 MiB for one account. Anything else is skipped, and that app
+  takes its name from the shared directories or from its binary.
 
 ## 0.5.1 (2026-11-22)
 

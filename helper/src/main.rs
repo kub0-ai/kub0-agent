@@ -1550,26 +1550,6 @@ fn delete_element(ip: &IpAddr) -> Result<(), String> {
     ])
 }
 
-fn set_contains(ip: &IpAddr) -> bool {
-    // Compare as addresses, not strings: nft may print an IPv6 element in a
-    // different (but equal) spelling from the one we added.
-    nft_verify::set_elements_in_text(&nft_list_set(set_name(ip)))
-        .iter()
-        .any(|e| e.parse::<IpAddr>().map(|x| x == *ip).unwrap_or(false))
-}
-
-fn verify_element_absent(ip: &IpAddr) -> bool {
-    !set_contains(ip)
-}
-
-fn nft_list_set(name: &str) -> String {
-    Command::new("nft")
-        .args(["list", "set", "inet", TABLE, name])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default()
-}
-
 trait EndpointSet {
     fn contains(&mut self, ip: &IpAddr) -> Result<bool, String>;
     fn add(&mut self, ip: &IpAddr) -> Result<(), String>;
@@ -1866,27 +1846,8 @@ fn block_ips(app_raw: &str, ips: &[String]) -> Result<Value, String> {
     let owner_path = owners_path();
     let _lock = owners::lock(&owner_path, 0)?;
     ensure_ip_sets_and_rules()?;
-    let mut set = NftEndpointSet;
-    let inserted = insert_missing_endpoints(&mut set, &parsed)?;
     let requested: Vec<String> = parsed.iter().map(ToString::to_string).collect();
-
-    let flush = match flush_conntrack(&parsed) {
-        Ok(flush) => flush,
-        Err(e) => return Err(rollback_inserted(&mut set, &inserted, e)),
-    };
-    if !flush.ok {
-        return Err(rollback_inserted(
-            &mut set,
-            &inserted,
-            format!("conntrack flush failed ({})", flush.summary()),
-        ));
-    }
-
-    let mut map = owners::load(&owner_path);
-    owners::grant(&mut map, &app, &requested);
-    if let Err(e) = owners::save(&owner_path, &map) {
-        return Err(rollback_inserted(&mut set, &inserted, e));
-    }
+    let flush = commit_endpoint_block(&mut NftEndpointSet, &owner_path, &app, &parsed, flush_conntrack)?;
     Ok(json!({
         "ok": true,
         "mechanism": "endpoints",
@@ -1908,38 +1869,79 @@ fn block_ips(app_raw: &str, ips: &[String]) -> Result<Value, String> {
     }))
 }
 
-fn unblock_ips(app_raw: &str) -> Result<Value, String> {
-    let app = sanitize_app(app_raw)?;
-    let owner_path = owners_path();
-    let _lock = owners::lock(&owner_path, 0)?;
-    let mut map = owners::load(&owner_path);
-    let (released, retained) = owners::exclusive_release(&mut map, &app);
-    if released.is_empty() && retained.is_empty() && !map.contains_key(&app) {
-        owners::save(&owner_path, &map)?;
-        return Ok(json!({
-            "ok": true,
-            "mechanism": "endpoints",
-            "app": app,
-            "released": released,
-            "retained": retained,
-            "verified": true
-        }));
+/// `block-ips` once the owner lock is held and the rules exist: add what the
+/// set lacks, flush conntrack, record `app` as an owner. A failure after the
+/// first step takes this call's own additions back out.
+fn commit_endpoint_block<S: EndpointSet>(
+    set: &mut S,
+    owner_path: &Path,
+    app: &str,
+    parsed: &[IpAddr],
+    flush: impl FnOnce(&[IpAddr]) -> Result<FlushReport, String>,
+) -> Result<FlushReport, String> {
+    // Before anything in the kernel changes: a record that cannot be read
+    // stops the block here, with the set and the file as they were.
+    let mut map = owners::load(owner_path)?;
+    let inserted = insert_missing_endpoints(set, parsed)?;
+    let requested: Vec<String> = parsed.iter().map(ToString::to_string).collect();
+
+    let flush = match flush(parsed) {
+        Ok(flush) => flush,
+        Err(e) => return Err(rollback_inserted(set, &inserted, e)),
+    };
+    if !flush.ok {
+        return Err(rollback_inserted(
+            set,
+            &inserted,
+            format!("conntrack flush failed ({})", flush.summary()),
+        ));
+    }
+
+    owners::grant(&mut map, app, &requested);
+    if let Err(e) = owners::save(owner_path, &map) {
+        return Err(rollback_inserted(set, &inserted, e));
+    }
+    Ok(flush)
+}
+
+/// `unblock-ips` once the owner lock is held: drop `app` as an owner and
+/// take out of the set the addresses no other app still owns. Returns those
+/// (`released`) and the ones another app keeps blocked (`retained`).
+fn release_endpoint_block<S: EndpointSet>(
+    set: &mut S,
+    owner_path: &Path,
+    app: &str,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut map = owners::load(owner_path)?;
+    let (released, retained) = owners::exclusive_release(&mut map, app);
+    if released.is_empty() && retained.is_empty() && !map.contains_key(app) {
+        owners::save(owner_path, &map)?;
+        return Ok((released, retained));
     }
     let mut missing = Vec::new();
     for ip_s in &released {
         let ip: IpAddr = ip_s.parse().map_err(|_| format!("bad stored ip {ip_s}"))?;
-        delete_element(&ip)?;
-        if !verify_element_absent(&ip) {
+        set.delete(&ip)?;
+        // A listing that fails reads as absent, as it always has here.
+        if matches!(set.contains(&ip), Ok(true)) {
             missing.push(ip_s.clone());
         }
     }
-    owners::save(&owner_path, &map)?;
+    owners::save(owner_path, &map)?;
     if !missing.is_empty() {
         return Err(format!(
             "failed to remove exclusive endpoint(s) from nft set: {}",
             missing.join(", ")
         ));
     }
+    Ok((released, retained))
+}
+
+fn unblock_ips(app_raw: &str) -> Result<Value, String> {
+    let app = sanitize_app(app_raw)?;
+    let owner_path = owners_path();
+    let _lock = owners::lock(&owner_path, 0)?;
+    let (released, retained) = release_endpoint_block(&mut NftEndpointSet, &owner_path, &app)?;
     Ok(json!({
         "ok": true,
         "mechanism": "endpoints",
@@ -2072,7 +2074,11 @@ fn status() -> Result<Value, String> {
         let known = block_state::initialized()?;
         (block_state::list()?, "marker", known)
     };
-    let map: OwnerMap = owners::load(&owners_path());
+    // A record that cannot be read is said so, not shown as no blocks.
+    let (map, owners_error) = match owners::load(&owners_path()) {
+        Ok(map) => (map, String::new()),
+        Err(e) => (OwnerMap::new(), e),
+    };
     let caps = probe_blocking_caps();
     let scoped = caller::invoking_uid().and_then(temporary::load);
     let (nameservers, gateways) = host_critical();
@@ -2082,6 +2088,8 @@ fn status() -> Result<Value, String> {
         "paused": is_paused(),
         "hostCritical": endpoints::critical_list(&nameservers, &gateways),
         "owners": map,
+        "ownersKnown": owners_error.is_empty(),
+        "ownersError": owners_error,
         "cgroupBlocks": cgroup_blocks,
         "cgroupBlocksSource": cgroup_blocks_source,
         "cgroupBlocksKnown": cgroup_blocks_known,
@@ -2270,6 +2278,63 @@ fi
         assert!(error.contains("simulated nft failure"));
         assert_eq!(set.deleted, vec![first]);
         assert_eq!(set.present, BTreeSet::from([shared]));
+    }
+
+    fn flushed(_: &[IpAddr]) -> Result<FlushReport, String> {
+        Ok(FlushReport { flushed: vec![], failed: vec![], ok: true, missing_tool: false })
+    }
+
+    fn owner_file(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("kub0-owner-txn-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir.join("endpoint-owners.json")
+    }
+
+    /// app-a blocks an address. The owner file is then damaged, app-b blocks
+    /// the same address and lifts its own block again. app-a never unblocked
+    /// anything, so its address must still be in the set.
+    #[test]
+    fn a_damaged_owner_file_does_not_cost_another_app_its_block() {
+        let ip: IpAddr = "203.0.113.7".parse().unwrap();
+        for (tag, what, damage) in [
+            ("cut", "cut short", &b"{\n  \"apps\": {\n    \"app-a\": ["[..]),
+            ("empty", "empty, as a crash during a write can leave it", &b""[..]),
+            ("junk", "not JSON", &b"\0\0\0\0"[..]),
+        ] {
+            let path = owner_file(tag);
+            let mut set = FakeSet::default();
+            commit_endpoint_block(&mut set, &path, "app-a", &[ip], flushed).map(|_| ()).unwrap();
+            assert!(set.present.contains(&ip));
+            fs::write(&path, damage).unwrap();
+
+            let blocked = commit_endpoint_block(&mut set, &path, "app-b", &[ip], flushed).map(|_| ());
+            let lifted = release_endpoint_block(&mut set, &path, "app-b");
+            assert!(
+                set.present.contains(&ip),
+                "owner file {what}: app-b's unblock took app-a's {ip} out of the set (app-b's block said {blocked:?}, its unblock {lifted:?})"
+            );
+            // Neither call may go ahead on a record it could not read, and
+            // neither may replace it: it is all that says who owns what.
+            let blocked = blocked.expect_err("a block went ahead without the owner record");
+            lifted.expect_err("an unblock went ahead without the owner record");
+            assert!(blocked.contains("teardown"), "the refusal says how to start again: {blocked}");
+            assert_eq!(fs::read(&path).unwrap(), damage, "owner file {what}: it was overwritten");
+            assert!(set.deleted.is_empty(), "nothing this call did not add is taken out: {:?}", set.deleted);
+            fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_missing_owner_file_is_no_blocks_yet() {
+        let ip: IpAddr = "203.0.113.7".parse().unwrap();
+        let path = owner_file("fresh");
+        let mut set = FakeSet::default();
+        commit_endpoint_block(&mut set, &path, "app-a", &[ip], flushed).map(|_| ()).unwrap();
+        let (released, retained) = release_endpoint_block(&mut set, &path, "app-a").unwrap();
+        assert_eq!((released, retained), (vec![ip.to_string()], vec![]));
+        assert!(!set.present.contains(&ip));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }
 

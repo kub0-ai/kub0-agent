@@ -1917,7 +1917,7 @@ mod linux {
         let gen = live.shared.generation.load(Ordering::Relaxed);
         match serde_json::to_vec(&frame) {
             Ok(bytes) => {
-                if let Err(e) = trust::write_atomic(&live.dir.join(trust::STATE_FILE), &bytes, 0o644) {
+                if let Err(e) = trust::write_atomic(&live.dir.join(trust::STATE_FILE), &bytes, trust::STATE_FILE_MODE) {
                     log_debug(&format!("exec gate: state file not written: {e}"));
                 }
             }
