@@ -30,6 +30,7 @@ pub mod routes;
 pub mod seen;
 pub mod source;
 pub mod sse;
+pub mod statedir;
 pub mod suggest;
 pub mod tags;
 pub mod trust;

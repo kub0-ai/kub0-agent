@@ -30,8 +30,9 @@ release, `/run/vallum`, where the daemon keeps only a symlink to the command
 socket under its old name.
 <!-- /rename-compat -->
 
-`--system` uses `/run/kub0/kub0.sock` (0660), `/var/lib/kub0/daemon` and
-`/usr/share/kub0`. Without the ASN database, or without the country database while
+`--system` uses `/run/kub0/kub0.sock` (0660), `/var/lib/kub0/daemon` (0700,
+root's alone; who reads what under `/var/lib/kub0` is a table in
+`SECURITY.md`) and `/usr/share/kub0`. Without the ASN database, or without the country database while
 a country block rule applies, it applies no new org block rules and leaves any
 already in the kernel. It reads both once, at start or at its first country rule, so
 after installing a missing one restart it: `sudo systemctl restart kub0d`. The
@@ -88,7 +89,11 @@ Every match is logged with its path and decision (`BLOCKED`, `allowed once`,
 `allowed (trusted here)`, `NOT blocked (fail-open)`), kept in a ring for the
 panel, and written to `/var/lib/kub0/execgate/state.json`, which the per-user
 daemon mirrors into its fleet frame so the panel and the desktop notification
-can show it. The owner's answers come back through the polkit helper
+can show it. That directory is `root:kub0`, mode 2750, and the file 0640: a
+per-user daemon mirrors it only in a session that is in the `kub0` group. In
+one that is not (an account never added, or a session begun before it was)
+the mirror reads nothing and the panel shows no exec gate until the next
+login. The owner's answers come back through the polkit helper
 (`kub0-block execgate-trust|execgate-allow-once|execgate-untrust <sha256>`),
 which appends to `/var/lib/kub0/execgate/requests.ndjson`; the daemon applies
 each request within a second and keeps `trusted.json` and `allow-once.json`
