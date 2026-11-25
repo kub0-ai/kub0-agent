@@ -59,7 +59,13 @@ pub fn request_line(op: &str, sha256: &str, uid: u32, ts: u64, note: &str) -> St
 /// Append one request under the daemon's lock. Root only: the directory is
 /// root-owned and the lock file is 0600.
 pub fn append_request(dir: &Path, op: &str, sha256: &str, uid: u32, ts: u64, note: &str) -> Result<(), String> {
-    crate::rename::create_state_dir(dir, 0o755).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    if !dir.is_dir() {
+        // The state root is made 0755 on the way; the gate's own directory
+        // starts root's alone. The daemon gives it to the kub0 group at start.
+        crate::rename::create_state_dir(dir, 0o755).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("close {}: {e}", dir.display()))?;
+    }
     let lock = OpenOptions::new()
         .read(true)
         .write(true)

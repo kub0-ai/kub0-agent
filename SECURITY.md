@@ -29,10 +29,33 @@ supported.
   in a terminal, or from the panel `pkexec /usr/bin/kub0 …`, where polkit asks
   for a password each time. `sudo kub0 install` runs as root too.
 
+## What is on disk, and who can read it
+
+The system daemon's state is under `/var/lib/kub0`. It is kept to the same
+readers as the socket, by directory:
+
+| Path | Who can read it | What it holds |
+| --- | --- | --- |
+| `daemon/` | root | which account connected where: history, unattributed connections, activity, names, watch rules |
+| `execgate/` | root and the `kub0` group | `state.json`, the exec gate's frame with the path and digest of what it stopped (a per-user daemon in the group mirrors it), and the trusted list. The org list, the one-shot allows and the request queue in it are root's alone |
+| `cgroup-restore/` | root | the processes a block moved, with their owners and cgroups |
+| `account.json` | root | the account and its token |
+| `scoped/` | root and the rule owner's primary group | timed destination rules, one file per account |
+| `endpoint-owners.json`, `cgroup-blocks/`, `paused` | every account | which apps are blocked, the addresses of "endpoints only" blocks, and whether enforcement is paused. `kub0-block status` reads them as whoever runs the panel, in the group or not |
+
+The daemon applies the first three rows each time it starts, so an install
+from 0.5.1 or earlier, where `daemon/` and `execgate/` could be read by every
+account, is closed by the first start after the update. If the `kub0` group
+is missing or is not one `kub0 install` made, `execgate/` is root's alone.
+The per-user daemon keeps its state directory (`~/.local/state/kub0`) to its
+own account in the same way. An explicit `--state-dir` or
+`KUB0_EXEC_GATE_DIR` is used as it is given.
+
 ## What we want to hear about
 
 - Someone outside the `kub0` group changing firewall state, reading another
-  account's connections, or reaching the daemon's socket.
+  account's connections, or reaching the daemon's socket, or reading anything
+  the table above keeps from them.
 - A member of the `kub0` group doing what is documented as root-only: lifting
   a block, pausing enforcement, turning destination sharing on, logging the
   host out.

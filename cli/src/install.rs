@@ -687,7 +687,13 @@ impl Exec for Installer<'_> {
                 // never starts a second state directory.
                 let execgate = paths::execgate_dir();
                 if !execgate.is_dir() {
+                    // The state root is made 0755 on the way (the helper's
+                    // `status` runs as any user); the gate's own directory
+                    // starts root's alone, and the daemon gives it to the
+                    // kub0 group when it starts.
                     paths::rename::create_state_dir(&execgate, 0o755).map_err(|e| format!("creating {}: {e}", execgate.display()))?;
+                    std::fs::set_permissions(&execgate, <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+                        .map_err(|e| format!("closing {}: {e}", execgate.display()))?;
                     self.did.push(format!("created {}", execgate.display()));
                 }
             }

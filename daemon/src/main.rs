@@ -584,6 +584,7 @@ fn prepare_state(args: &mut Args) {
     match args.mode {
         DaemonMode::System => {
             if args.state_dir != Path::new(SYSTEM_STATE_DIR) {
+                let _ = vallumd::statedir::create_private(&args.state_dir);
                 return;
             }
             args.state_dir = rename::state_path("daemon");
@@ -591,6 +592,7 @@ fn prepare_state(args: &mut Args) {
         DaemonMode::User => {
             let default = default_state_dir();
             if args.state_dir != default {
+                let _ = vallumd::statedir::create_private(&args.state_dir);
                 return;
             }
             let Some(old) = default.parent().map(|p| p.join(rename::OLD_USER_STATE_NAME)) else {
@@ -609,7 +611,74 @@ fn prepare_state(args: &mut Args) {
             };
         }
     }
-    let _ = std::fs::create_dir_all(&args.state_dir);
+    close_default_state(args.mode, &args.state_dir);
+}
+
+/// Keep the default state directories to the accounts that may read the
+/// daemon (`statedir`). Done at every start, so a tree an earlier version
+/// left readable by every account is closed by the first start of this one.
+fn close_default_state(mode: DaemonMode, state_dir: &Path) {
+    use vallumd::rename;
+    let system = (mode == DaemonMode::System).then(|| SystemTree {
+        root: rename::state_root(),
+        // Only the gate directory this daemon chose. One named by
+        // KUB0_EXEC_GATE_DIR is used as given, like an explicit --state-dir.
+        gate: (vallumd::trust::dir() == rename::state_path(vallumd::trust::DIR_NAME)).then(vallumd::trust::dir),
+        group: vallumd::system_status::status_group(),
+    });
+    for line in close_state(state_dir, system) {
+        eprintln!("kub0d: {line}");
+    }
+}
+
+/// The system daemon's part of the state root.
+struct SystemTree {
+    root: PathBuf,
+    /// The exec gate's directory, when it is the default one.
+    gate: Option<PathBuf>,
+    /// The status group, or why it cannot be used.
+    group: std::io::Result<u32>,
+}
+
+/// This daemon's own directory to its owner; on the system daemon also the
+/// helper's cgroup restore records to root, and the exec gate's directory to
+/// root and the status group (to root alone when that group cannot be
+/// used). The root itself stays one any account can enter: the helper's
+/// `status` verb, run by a panel in or out of the group, reads the block
+/// markers and the endpoint owner map there. Returns what to log. A failure
+/// is one of those lines, naming what could not be closed; the daemon runs.
+fn close_state(state_dir: &Path, system: Option<SystemTree>) -> Vec<String> {
+    use vallumd::statedir;
+    let mut log = Vec::new();
+    let mut closed = |what: &Path, r: std::io::Result<bool>| match r {
+        Ok(true) => log.push(format!("{} was readable by other accounts; it is its owner's alone now", what.display())),
+        Ok(false) => {}
+        Err(e) => log.push(format!("could not close {} to other accounts: {e}", what.display())),
+    };
+    if let Some(tree) = &system {
+        let _ = vallumd::rename::create_state_dir(&tree.root, 0o755);
+    }
+    closed(state_dir, statedir::make_private(state_dir));
+    let Some(tree) = system else {
+        return log;
+    };
+    let restore = tree.root.join("cgroup-restore");
+    if restore.is_dir() {
+        closed(&restore, statedir::make_private(&restore));
+    }
+    let Some(gate) = tree.gate else {
+        return log;
+    };
+    match statedir::share_with_group(&gate, tree.group.as_ref().ok().copied()) {
+        Ok(statedir::Shared::WithGroup(_)) => {}
+        Ok(statedir::Shared::OwnerOnly) => log.push(format!(
+            "{} is root's alone ({}); a per-user daemon cannot mirror the exec gate from it",
+            gate.display(),
+            tree.group.err().map(|e| e.to_string()).unwrap_or_else(|| "the status group would not take it".into())
+        )),
+        Err(e) => log.push(format!("could not set who reads {}: {e}", gate.display())),
+    }
+    log
 }
 
 /// Why a 0.4.x system daemon counts as running, if one does: a root process
@@ -4484,10 +4553,16 @@ impl UnknownLog {
         if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
+        let mut opts = OpenOptions::new();
+        opts.create(true).append(true);
+        // Who connected where: its owner's, whatever the umask and whatever
+        // directory it was given.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&self.path)?;
         f.write_all(line.as_bytes())
     }
 }
@@ -6463,6 +6538,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The unattributed-connection log names the account and the endpoint.
+    /// It is its owner's to read, whatever umask the daemon was started
+    /// under and whatever directory it was given.
+    #[cfg(unix)]
+    #[test]
+    fn the_unknown_log_is_created_for_its_owner_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmpdir("mode");
+        let mut log = UnknownLog::load(&dir);
+        assert!(log.consider(&test_conn(10, "no-owner", false), 1));
+        let mode = std::fs::metadata(dir.join("unknown.ndjson")).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode & 0o077, 0, "unknown.ndjson is {mode:o}: accounts other than its owner can read who connected where");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn orphan_and_unresolved_never_logged() {
         let dir = tmpdir("skip");
@@ -6579,6 +6669,96 @@ mod tests {
         assert!(new.contains("no-owner"), "{new}");
         assert_eq!(log.keys.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A system install as 0.5.1 left it, then one start of this daemon.
+    /// What says who connected where, what the gate stopped and which
+    /// processes were moved is closed; what the helper's unprivileged
+    /// `status` reads at the root is left as it was.
+    #[cfg(unix)]
+    #[test]
+    fn a_start_closes_an_upgraded_system_tree_and_leaves_what_status_reads() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let mode = |p: &Path| std::fs::symlink_metadata(p).unwrap().mode() & 0o7777;
+        let put = |p: &Path, m: u32| {
+            if let Some(d) = p.parent() {
+                std::fs::create_dir_all(d).unwrap();
+                std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            std::fs::write(p, "x").unwrap();
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+        };
+        let install = |tag: &str| {
+            let root = tmpdir(tag);
+            for (f, m) in [
+                ("daemon/unknown.ndjson", 0o644),
+                ("daemon/activity.ndjson", 0o644),
+                ("daemon/history.sqlite", 0o600),
+                ("execgate/state.json", 0o644),
+                ("execgate/org-list.json", 0o600),
+                ("cgroup-restore/firefox.json", 0o644),
+                ("cgroup-blocks/firefox.boot.block", 0o644),
+                ("endpoint-owners.json", 0o644),
+                ("account.json", 0o600),
+            ] {
+                put(&root.join(f), m);
+            }
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+            root
+        };
+
+        // No usable status group: everything detailed is root's alone.
+        let root = install("tree-nogroup");
+        let log = close_state(
+            &root.join("daemon"),
+            Some(SystemTree { root: root.clone(), gate: Some(root.join("execgate")), group: Err(std::io::Error::other("no kub0 group")) }),
+        );
+        assert_eq!((mode(&root.join("daemon")), mode(&root.join("daemon/unknown.ndjson")), mode(&root.join("daemon/activity.ndjson"))), (0o700, 0o600, 0o600));
+        assert_eq!((mode(&root.join("cgroup-restore")), mode(&root.join("cgroup-restore/firefox.json"))), (0o700, 0o600));
+        assert_eq!((mode(&root.join("execgate")), mode(&root.join("execgate/state.json"))), (0o700, 0o600), "closed, not left open, without the group");
+        assert_eq!(
+            (mode(&root), mode(&root.join("cgroup-blocks")), mode(&root.join("cgroup-blocks/firefox.boot.block")), mode(&root.join("endpoint-owners.json"))),
+            (0o755, 0o755, 0o644, 0o644),
+            "what `kub0-block status` reads as the panel's user is not touched"
+        );
+        assert_eq!(mode(&root.join("account.json")), 0o600);
+        assert!(log.iter().any(|l| l.contains("daemon was readable by other accounts")), "{log:?}");
+        assert!(log.iter().any(|l| l.contains("is root's alone (no kub0 group)")), "{log:?}");
+        // A second start has nothing to say about the directories it closed.
+        let again = close_state(
+            &root.join("daemon"),
+            Some(SystemTree { root: root.clone(), gate: Some(root.join("execgate")), group: Err(std::io::Error::other("no kub0 group")) }),
+        );
+        assert!(!again.iter().any(|l| l.contains("was readable")), "{again:?}");
+        let _ = std::fs::remove_dir_all(&root);
+
+        // A gate directory named by KUB0_EXEC_GATE_DIR is not this daemon's to change.
+        let root = install("tree-given");
+        close_state(&root.join("daemon"), Some(SystemTree { root: root.clone(), gate: None, group: Err(std::io::Error::other("unused")) }));
+        assert_eq!((mode(&root.join("daemon")), mode(&root.join("execgate"))), (0o700, 0o755));
+        let _ = std::fs::remove_dir_all(&root);
+
+        // With the group: its members may enter the gate directory and read
+        // the frame; the daemon's own directory is still root's alone.
+        let egid = unsafe { libc::getegid() };
+        let n = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+        let mut gids = vec![0 as libc::gid_t; n.max(0) as usize];
+        let n = unsafe { libc::getgroups(n, gids.as_mut_ptr()) };
+        gids.truncate(n.max(0) as usize);
+        let Some(gid) = gids.into_iter().find(|g| *g != egid && *g != 0) else {
+            eprintln!("skipped: this account is in no second group to stand in for kub0");
+            return;
+        };
+        let root = install("tree-group");
+        let log = close_state(&root.join("daemon"), Some(SystemTree { root: root.clone(), gate: Some(root.join("execgate")), group: Ok(gid) }));
+        let gate = std::fs::metadata(root.join("execgate")).unwrap();
+        assert_eq!((gate.mode() & 0o7777, gate.gid()), (0o2750, gid));
+        let state = std::fs::metadata(root.join("execgate/state.json")).unwrap();
+        assert_eq!((state.mode() & 0o7777, state.gid()), (0o640, gid));
+        assert_eq!(mode(&root.join("execgate/org-list.json")), 0o600);
+        assert_eq!(mode(&root.join("daemon")), 0o700);
+        assert!(!log.iter().any(|l| l.contains("root's alone")), "{log:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A start never moves system state; only `kub0d migrate-state` and

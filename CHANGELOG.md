@@ -5,6 +5,28 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+- The system daemon's records could be read by every account on the machine,
+  not only by root and the `kub0` group. `/var/lib/kub0/daemon` and
+  `/var/lib/kub0/execgate` were created 0755 and most files in them 0644:
+  the log of unattributed connections (account, address, host name), the
+  activity timeline, network names, and the exec gate's frame with the path
+  and digest of everything it stopped. The history database beside them was
+  already private. Now `daemon/` is root's alone (0700), `execgate/` is
+  root's and the `kub0` group's (2750, `state.json` 0640), and the helper's
+  `cgroup-restore/` is root's alone. The daemon applies this at every start,
+  so an existing install is closed by the first start after updating; the
+  journal says once what it closed. Without a usable `kub0` group
+  `execgate/` is root's alone. The per-user daemon closes
+  `~/.local/state/kub0` the same way. `SECURITY.md` has the table of what is
+  where and who reads it.
+  - Still readable by every account, on purpose: which apps are blocked, the
+    addresses of "endpoints only" blocks, and whether enforcement is paused.
+    The panel reads those through `kub0-block status` as whoever runs it.
+  - One thing a session outside the group loses: a per-user daemon there
+    (source build, before the first login after `kub0 install`) no longer
+    mirrors the exec gate, so that panel shows no exec gate until you log
+    in again. `kub0 doctor` says the file is the group's when it cannot
+    read it.
 - An "endpoints only" block could be lifted by another app's unblock. The
   helper keeps one file that says which app blocked which address, and it
   read a file it could not understand (damaged, or empty after a crash in
