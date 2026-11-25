@@ -6,7 +6,7 @@ members = ["daemon", "helper", "cli"]
 # Upstream shipped 1.0.0. vallum is a prototype and inherited that number
 # without earning it, so the version resets rather than claiming a stability
 # promise nothing here can keep yet.
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 license = "MIT"
 # Cargo's `authors` cannot express "forked from", and leaving it as upstream's
