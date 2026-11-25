@@ -1,0 +1,15 @@
+# The sha256 of each release tarball that scripts/install-release.sh may run
+# as root, one "<sha256>  <tarball>" line each, as sha256sum prints them.
+#
+# The script installs the version in manifest.json and refuses when that
+# version's tarball is not here or does not have this digest. So what the
+# Install kub0 button runs is fixed by the commit a panel is at, not by what
+# the release holds on the day it is clicked.
+#
+# A release's two lines are added after it is published, from tarballs whose
+# build provenance was verified first: CONTRIBUTING.md, "Releasing". Lines
+# are added, never edited: a published tarball does not change.
+
+# 0.5.1
+3b9c0b7f18a03d5893295adad00c1dfdc8bf408948c21a945951507f983f8165  kub0-agent-0.5.1-x86_64-unknown-linux-musl.tar.gz
+4c088b50326c9aaaf31e2a3f10453ee7a8d9b20f0e4098ca73704f4071c8d2e8  kub0-agent-0.5.1-aarch64-unknown-linux-musl.tar.gz

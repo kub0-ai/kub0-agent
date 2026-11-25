@@ -144,7 +144,7 @@ function body(st, panelVersion) {
     if (st === "install") {
         var v = parse(panelVersion) ? ("release " + String(panelVersion).trim().replace(/^v/, "")) : "the release that matches this panel"
         return "The panel shows connections once the kub0 daemon runs. Install kub0 opens a terminal that downloads "
-            + v + " for this machine from " + RELEASES + ", checks its checksum and runs sudo ./kub0 install. "
+            + v + " for this machine from " + RELEASES + ", checks it against the digest this panel carries and runs sudo ./kub0 install. "
             + "You read each step there, and that is where it asks for your password. "
             + "Build from source compiles it in the plugin folder instead, and installs Rust to do it."
     }

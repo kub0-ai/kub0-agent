@@ -107,10 +107,17 @@ installer for a plugin. Open the panel and it says kub0 is not installed yet,
 and offers two ways to fix that:
 
 - **Install kub0** opens a terminal that downloads the release matching the
-  panel for your architecture, checks its checksum, and runs its
-  `sudo ./kub0 install`. The script is
+  panel for your architecture, checks it against the digest the panel carries
+  for it, and runs its `sudo ./kub0 install`. The script is
   [`scripts/install-release.sh`](scripts/install-release.sh); it is short, and
-  it does nothing the server instructions below do not do by hand.
+  it does nothing the server instructions below do not do by hand. The digest
+  is a line of [`scripts/release-digests`](scripts/release-digests), part of
+  the plugin's source: the tarball that runs as root is the one that was
+  there when this version of the panel was written, and a release whose files
+  were replaced afterwards is refused. A panel that carries no digest for its
+  version yet (one checked out at a release's tag, or between releases)
+  downloads nothing and says so; `omarchy plugin update` brings the digests,
+  and **Build from source** needs none.
 - **Build from source** compiles the daemon in the plugin folder instead
   (`./build.sh`; it installs Rust if it is missing). The panel then runs that
   daemon as you: other accounts' and system services' connections show as

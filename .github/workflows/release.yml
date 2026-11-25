@@ -9,6 +9,12 @@ name: release-linux
 # version's section of CHANGELOG.md. This is the only supported way to obtain
 # Linux prebuilts; none are committed.
 #
+# A release is finished one commit after its tag: the panel's Install button
+# runs only a tarball whose sha256 is in scripts/release-digests, and those
+# two lines are added once this workflow has published (CONTRIBUTING.md,
+# "Releasing"). Do not re-run this for a tag whose digests are pinned: the
+# tarballs would be replaced and every panel that pins them would refuse them.
+#
 # Runners. A private repository builds x86_64 on the kub0 self-hosted runner
 # when the repository variable KUB0_LINUX_RUNNER names its label. These
 # workflows never ask for it on a PUBLIC repository, whatever that variable

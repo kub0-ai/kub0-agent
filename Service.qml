@@ -2022,8 +2022,8 @@ Item {
     return "ok"
   }
 
-  // The release that matches this panel: downloaded, checked against its
-  // checksum, and installed by its own `sudo ./kub0 install`, in a terminal
+  // The release that matches this panel: downloaded, checked against the
+  // digest this checkout pins, and installed by its own `sudo ./kub0 install`, in a terminal
   // the user watches (scripts/install-release.sh). Done when the helper is
   // where `kub0 install` puts it.
   function installRelease() {
