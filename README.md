@@ -961,6 +961,14 @@ records per-app ownership, so **Unblock** removes that app's addresses while
 shared addresses owned by another blocked app stay. `system` and `unknown` rows
 cannot be blocked.
 
+That ownership is one file, `/var/lib/kub0/endpoint-owners.json`. If it is
+there and cannot be read as that record (damaged, empty, in another shape), an
+endpoint block or unblock is refused and changes nothing: the addresses in the
+set stay blocked, and the file is left as it was. `kub0-block status` then
+reports `ownersKnown: false` with the reason. The way out is to lift every
+block and start again, `sudo kub0 teardown --yes`, which also removes the
+file; or to put a good copy of the file back.
+
 `kub0-block teardown` deletes `table inet vallum` and the plugin's cgroups,
 and reports failure if either remains. Other firewall tables are never touched.
 
