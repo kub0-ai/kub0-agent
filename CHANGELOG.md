@@ -5,6 +5,18 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+- An "endpoints only" block could be lifted by another app's unblock. The
+  helper keeps one file that says which app blocked which address, and it
+  read a file it could not understand (damaged, or empty after a crash in
+  the middle of a write) as "no blocks". The next block then saved that
+  near-empty record over the real one, and unblocking that app released an
+  address a different app still had blocked. Now only a missing file means
+  no blocks. A file that is there and unreadable stops the block or unblock
+  before anything changes, and the message names the way out: `sudo kub0
+  teardown --yes` lifts every block and starts again. The file is also
+  written so that a crash leaves the old record or the new one, with its
+  mode set rather than left to the caller's umask, and `kub0-block status`
+  says `ownersKnown: false` instead of showing an unreadable record as empty.
 - On the system daemon, one file in another account's
   `~/.local/share/applications` could stop monitoring for everyone. The
   daemon reads those `.desktop` files, as root, to name that account's apps,
