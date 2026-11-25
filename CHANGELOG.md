@@ -5,6 +5,16 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+- On the system daemon, one file in another account's
+  `~/.local/share/applications` could stop monitoring for everyone. The
+  daemon reads those `.desktop` files, as root, to name that account's apps,
+  and it read whatever was there: a named pipe ending in `.desktop` made it
+  wait for ever, on the thread that samples connections, and a link to a
+  device such as `/dev/zero` was read without end. It now reads only regular
+  files that the account itself owns, each up to 256 KiB, and at most 1,024
+  entries or 8 MiB for one account. Anything else is skipped, and that app
+  takes its name from the shared directories or from its binary.
+
 ## 0.5.1 (2026-11-22)
 
 The release the public repository starts from. A panel added with `omarchy
