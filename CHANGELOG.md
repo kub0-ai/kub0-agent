@@ -61,6 +61,11 @@ from the private repository this was developed in before it was published.
   files that the account itself owns, each up to 256 KiB, and at most 1,024
   entries or 8 MiB for one account. Anything else is skipped, and that app
   takes its name from the shared directories or from its binary.
+- Development: two of the daemon's tests could be handed the same temporary
+  directory when they started in the same tick of the clock, and then read or
+  removed each other's files. It showed up as two different tests failing now
+  and then on the Intel macOS runner. Each test now gets a directory of its
+  own. No shipped code changes.
 
 ## 0.5.1 (2026-11-22)
 

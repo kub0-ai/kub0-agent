@@ -2829,14 +2829,24 @@ mod tests {
     }
 
     impl Tmp {
+        /// A directory of this test's own. The clock does not make it so: tests run
+        /// in parallel, and two that read the same tick were handed one directory.
+        /// Each then wrote its `event` file over the other's, and whichever finished
+        /// first removed the directory under the other (macOS, where the clock
+        /// ticks in microseconds: one test read back another's bytes, and a second
+        /// run failed a write with "No such file or directory"). The counter is
+        /// what tells two calls in one process apart; the clock is kept so a run
+        /// does not land in a directory an earlier process with this pid left.
         pub(super) fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let dir = std::env::temp_dir().join(format!(
-                "vallum-execgate-{}-{}",
+                "vallum-execgate-{}-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             std::fs::create_dir_all(&dir).unwrap();
             Self { dir }
@@ -2850,6 +2860,29 @@ mod tests {
     impl Drop for Tmp {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// Two tests that start in the same tick of the clock must not be handed one
+    /// directory. Sixteen threads are let go together, fifty times.
+    #[test]
+    fn every_tmp_is_its_own_directory() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..50 {
+            let gate = std::sync::Arc::new(std::sync::Barrier::new(16));
+            let started: Vec<_> = (0..16)
+                .map(|_| {
+                    let gate = gate.clone();
+                    std::thread::spawn(move || {
+                        gate.wait();
+                        Tmp::new()
+                    })
+                })
+                .collect();
+            let tmps: Vec<Tmp> = started.into_iter().map(|h| h.join().unwrap()).collect();
+            for t in &tmps {
+                assert!(seen.insert(t.dir.clone()), "two tests were given {}", t.dir.display());
+            }
         }
     }
 
