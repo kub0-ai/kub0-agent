@@ -13,3 +13,7 @@
 # 0.5.1
 3b9c0b7f18a03d5893295adad00c1dfdc8bf408948c21a945951507f983f8165  kub0-agent-0.5.1-x86_64-unknown-linux-musl.tar.gz
 4c088b50326c9aaaf31e2a3f10453ee7a8d9b20f0e4098ca73704f4071c8d2e8  kub0-agent-0.5.1-aarch64-unknown-linux-musl.tar.gz
+
+# 0.5.2
+3259b96d3328f1c9de11fbc5c2219dae8541dd45b61c6ec608d5724956a0dd98  kub0-agent-0.5.2-x86_64-unknown-linux-musl.tar.gz
+bc0e1cff8421b7ee917a35bdb017a2406869faf1f5ecd0ce7adbf5a1bb0e0917  kub0-agent-0.5.2-aarch64-unknown-linux-musl.tar.gz
