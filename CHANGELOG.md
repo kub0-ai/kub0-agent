@@ -17,6 +17,15 @@ from the private repository this was developed in before it was published.
   written so that a crash leaves the old record or the new one, with its
   mode set rather than left to the caller's umask, and `kub0-block status`
   says `ownersKnown: false` instead of showing an unreadable record as empty.
+- On the system daemon, one file in another account's
+  `~/.local/share/applications` could stop monitoring for everyone. The
+  daemon reads those `.desktop` files, as root, to name that account's apps,
+  and it read whatever was there: a named pipe ending in `.desktop` made it
+  wait for ever, on the thread that samples connections, and a link to a
+  device such as `/dev/zero` was read without end. It now reads only regular
+  files that the account itself owns, each up to 256 KiB, and at most 1,024
+  entries or 8 MiB for one account. Anything else is skipped, and that app
+  takes its name from the shared directories or from its binary.
 
 ## 0.5.1 (2026-11-22)
 
