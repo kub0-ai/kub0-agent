@@ -5,6 +5,13 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+## 0.5.2 (2026-11-25)
+
+Four security fixes, all found in the Omarchy plugin marketplace's review of
+0.5.1 and reported privately. Update the plugin, then use **Install kub0**
+again (or run `sudo ./kub0 install` from this release): the new daemon closes
+an existing install's state directories the first time it starts.
+
 - **Install kub0** checks the download against a digest the panel carries,
   not one from the release. The script fetched the tarball and the checksum
   file it was checked against from the same GitHub release, so anyone able

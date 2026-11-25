@@ -12,7 +12,7 @@ on which engine answered the question. Several sources normalise into one flow
 schema and one UI: read what another firewall already decided, sample live
 sockets, or opt into kernel connect/UDP attempt capture.
 
-**Status: v0.5.1, early.** It works with no account, and then nothing leaves
+**Status: v0.5.2, early.** It works with no account, and then nothing leaves
 the machine that was not already leaving. kub0 accounts are not open to the
 public yet; what a connected account sends is listed under
 [Connecting to kub0](#connecting-to-kub0).

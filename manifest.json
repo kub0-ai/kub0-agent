@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ai.kub0.agent",
   "name": "kub0",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "author": "kub0-ai",
   "license": "MIT",
   "description": "Where every app on this machine connects, by country and network: a live map, one-key per-app blocks, traffic history, and a kub0 command that does the same from a terminal.",
