@@ -5,6 +5,19 @@ from the private repository this was developed in before it was published.
 
 ## Unreleased
 
+- **Install kub0** checks the download against a digest the panel carries,
+  not one from the release. The script fetched the tarball and the checksum
+  file it was checked against from the same GitHub release, so anyone able
+  to replace that release's files could replace both, and the tarball's
+  `kub0 install` then ran as root. The sha256 of each release tarball is now
+  a line in `scripts/release-digests`, in the plugin's own source: what the
+  button runs is fixed by the commit the panel is at. A tarball with any
+  other digest is refused, `KUB0_RELEASE_BASE` changes where it is fetched
+  from and not what it must be, and the release's checksum file is no longer
+  downloaded. A panel with no digest for its version downloads nothing and
+  says to update the plugin or build from source. The two 0.5.1 tarballs
+  are pinned; both carry a build provenance for the 0.5.1 tag, and nothing
+  suggests either was ever replaced.
 - The system daemon's records could be read by every account on the machine,
   not only by root and the `kub0` group. `/var/lib/kub0/daemon` and
   `/var/lib/kub0/execgate` were created 0755 and most files in them 0644:

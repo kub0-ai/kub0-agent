@@ -60,6 +60,9 @@ own account in the same way. An explicit `--state-dir` or
   a block, pausing enforcement, turning destination sharing on, logging the
   host out.
 - Lowering protection without the polkit prompt the README describes.
+- The panel's Install kub0 button (`scripts/install-release.sh`) running, as
+  root, a tarball other than the one `scripts/release-digests` names for that
+  version.
 - A response from the server, or from any network peer, that leads to code
   execution, a write outside the state directories, or a block on an address
   in the never-block floor (`docs/FLEET-NETWORK-POLICY.md`).

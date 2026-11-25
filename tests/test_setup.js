@@ -91,7 +91,7 @@ assert.strictEqual(V.title("stopped"), "", "the old name for unreachable is gone
 // The install sentence says what the button will do before it does it:
 // which release, from where, that it is checked, and that it uses sudo.
 const install = V.body("install", "0.5.1");
-for (const part of ["release 0.5.1", "github.com/kub0-ai/kub0-agent", "checksum", "sudo ./kub0 install", "password", "Build from source"])
+for (const part of ["release 0.5.1", "github.com/kub0-ai/kub0-agent", "the digest this panel carries", "sudo ./kub0 install", "password", "Build from source"])
   assert.ok(install.includes(part), "the install text names " + part + ":\n" + install);
 assert.ok(V.body("install", "").includes("the release that matches this panel"), "no version, no made-up number");
 // Logging out does not start a new session where the user's service manager
